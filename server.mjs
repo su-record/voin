@@ -14,6 +14,8 @@ import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
 import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-cleanup.mjs";
+import { asrHintOptions } from "./lib/asr-hints.mjs";
+import { correctWithLlm, ollamaStatus, LLM_MODELS } from "./lib/llm-correct.mjs";
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
 import { nameSuggestions, renameVoices, saveNameSuggestions, voicePath, voiceUrls } from "./lib/voice-samples.mjs";
@@ -510,7 +512,10 @@ class Dictation {
       if (seconds <= 12 || this.mode === "paste") text = (await transcribeWhole(chunks, this.language).catch(() => "")) || text;
       if (this.mode === "paste") {
         // 사전은 transcribeText에서 이미 바꿨다 (두 번 바꾸지 않게 여기선 군말만)
-        if (loadSettings().dictationFillers) text = removeFillers(text);
+        const s = loadSettings();
+        if (s.dictationFillers) text = removeFillers(text);
+        // 선택: 로컬 LLM(Gemma 4) 교정. 안 되면 원문 그대로
+        if (s.dictationLlm && text.trim()) text = (await correctWithLlm(text, { dictionary: s.dictionary, model: s.dictationLlmModel })).text;
       }
       if (text.trim()) this.send({ type: "dictation", text: text.trim(), mode: this.mode });
     } else {
@@ -568,17 +573,8 @@ let download = null; // { id, abort, progress }
 async function transcribeText(pcm, language) {
   const lang = languageFor(asr.model, language);
   const { dictionary } = loadSettings();
-  const options = lang ? { language: lang } : {};
-  const terms = dictionaryTerms(dictionary);
-  if (terms.length && supportsVocabulary(asr.model)) options.vocabulary = terms;
+  const { options } = asrHintOptions(asr.model, dictionaryTerms(dictionary), lang ? { language: lang } : {});
   return applyDictionary((await asr.model.transcribe(pcm, options)).text, dictionary);
-}
-function supportsVocabulary(model) {
-  try {
-    return Boolean(model.supports?.("vocabulary"));
-  } catch {
-    return false;
-  }
 }
 
 function setActiveState(next) {
@@ -787,6 +783,10 @@ async function handleApi(req, res, url) {
     return json(200, { settings, vaults: obsidianVaults(), diarizationReady, appVersion: APP_VERSION, saveDir: currentDir });
   }
   if (route === "GET /api/model") return json(200, activeState);
+  if (route === "GET /api/llm-status") {
+    const model = url.searchParams.get("model") || loadSettings().dictationLlmModel;
+    return json(200, { ...(await ollamaStatus(model)), selected: model, options: LLM_MODELS });
+  }
   if (route === "GET /api/status") {
     const live = activeMeeting && !activeMeeting.closing ? activeMeeting : null;
     return json(200, { recording: Boolean(live), startedAt: live?.startedAt ?? null, processing: job, model: activeState });

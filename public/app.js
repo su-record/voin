@@ -1042,6 +1042,18 @@ function fillSettingsForm({ settings: s, vaults, diarizationReady, appVersion, s
   if (!s.obsidianVault && vaults.length) vaultSelect.value = vaults[0].path;
   $("diarizationMissing").hidden = diarizationReady;
   updateSettingsUi();
+  refreshLlmStatus();
+}
+
+async function refreshLlmStatus() {
+  const el = $("llmStatus");
+  if (!el) return;
+  try {
+    const st = await api(`/api/llm-status?model=${encodeURIComponent(form.elements.dictationLlmModel.value)}`);
+    el.textContent = !st.ollama ? "· Ollama 꺼짐" : st.model ? "· 사용 가능 ✓" : `· 모델 없음 (ollama pull ${st.selected})`;
+  } catch {
+    el.textContent = "";
+  }
 }
 
 function updateSettingsUi() {
@@ -1086,6 +1098,7 @@ form.addEventListener("input", (e) => {
 });
 form.addEventListener("change", (e) => e.target.type === "text" && saveSettingsForm());
 form.addEventListener("submit", (e) => e.preventDefault());
+form.elements.dictationLlmModel?.addEventListener("change", () => refreshLlmStatus());
 
 // 맥 앱에서는 폴더 선택 창을 띄울 수 있다 (앱이 folderPicked를 불러 준다)
 form.querySelectorAll(".pick").forEach((button) => {
