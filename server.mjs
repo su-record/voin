@@ -13,6 +13,7 @@ import { WebSocketServer } from "ws";
 import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
+import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-cleanup.mjs";
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
 import { nameSuggestions, renameVoices, saveNameSuggestions, voicePath, voiceUrls } from "./lib/voice-samples.mjs";
@@ -425,9 +426,11 @@ function speak(text) {
 // voin이 답을 소리로 읽는 동안에는 자기 목소리를 듣지 않도록 마이크 소리를 버린다. 2분 동안 말이 없으면 스스로 끈다.
 const DICTATION_IDLE_MS = 2 * 60 * 1000;
 class Dictation {
-  constructor(send, language) {
+  // mode: "agent" = 말이 멈출 때마다 작업으로 보냄 | "paste" = 끝낼 때(⌥D 다시) 한 번에 받아써서 지금 앱에 붙여넣기
+  constructor(send, language, mode = "agent") {
     this.send = send;
     this.language = language;
+    this.mode = mode;
     this.done = false;
     this.ready = false;
     this.lastVoiceAt = Date.now();
@@ -463,7 +466,7 @@ class Dictation {
         this.preview.push(line.text);
         this.send({ type: "dictate-partial", text: this.preview.join(" ") });
         clearTimeout(this.timer);
-        this.timer = setTimeout(() => this.emitSegment(), 1500);
+        if (this.mode === "agent") this.timer = setTimeout(() => this.emitSegment(), 1500);
       },
       onLevel: () => {},
     });
@@ -503,8 +506,13 @@ class Dictation {
       await transcriber.stop();
       const seconds = chunks.reduce((n, c) => n + c.length, 0) / SAMPLE_RATE;
       let text = preview.join(" ");
-      if (seconds <= 12) text = (await transcribeWhole(chunks, this.language).catch(() => "")) || text;
-      if (text.trim()) this.send({ type: "dictation", text: text.trim() });
+      // 붙여넣기 모드는 길어도 전체를 다시 받아쓴다 (끊긴 조각보다 정확하고, 실시간으로 보낼 필요가 없다)
+      if (seconds <= 12 || this.mode === "paste") text = (await transcribeWhole(chunks, this.language).catch(() => "")) || text;
+      if (this.mode === "paste") {
+        // 사전은 transcribeText에서 이미 바꿨다 (두 번 바꾸지 않게 여기선 군말만)
+        if (loadSettings().dictationFillers) text = removeFillers(text);
+      }
+      if (text.trim()) this.send({ type: "dictation", text: text.trim(), mode: this.mode });
     } else {
       await this.transcriber.stop();
     }
@@ -556,9 +564,21 @@ let asr = null; // { entry, path, model }
 let activeState = { state: "loading" };
 let download = null; // { id, abort, progress }
 
+// 받아쓰기 한 번: 용어 사전은 모델이 지원하면 힌트(vocabulary)로 주고, 결과에도 낱말 경계 기준으로 치환한다 (회의록·받아쓰기 모두)
 async function transcribeText(pcm, language) {
   const lang = languageFor(asr.model, language);
-  return (await asr.model.transcribe(pcm, lang ? { language: lang } : {})).text;
+  const { dictionary } = loadSettings();
+  const options = lang ? { language: lang } : {};
+  const terms = dictionaryTerms(dictionary);
+  if (terms.length && supportsVocabulary(asr.model)) options.vocabulary = terms;
+  return applyDictionary((await asr.model.transcribe(pcm, options)).text, dictionary);
+}
+function supportsVocabulary(model) {
+  try {
+    return Boolean(model.supports?.("vocabulary"));
+  } catch {
+    return false;
+  }
 }
 
 function setActiveState(next) {
@@ -1041,6 +1061,12 @@ const server = http.createServer(async (req, res) => {
     fs.createReadStream(file).pipe(res);
     return;
   }
+  // 화면과 서버가 같이 쓰는 순수 함수 (사전 글상자 파싱): 이 파일 하나만 내준다
+  if (url.pathname === "/shared/text-cleanup.mjs") {
+    res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
+    fs.createReadStream(new URL("./lib/text-cleanup.mjs", import.meta.url)).pipe(res);
+    return;
+  }
   const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   const filePath = path.join(PUBLIC_DIR, path.normalize(requested));
   if (!filePath.startsWith(PUBLIC_DIR) || !fs.existsSync(filePath)) {
@@ -1088,7 +1114,7 @@ wss.on("connection", (ws) => {
     if (message.type === "dictate-start") {
       if (modelNotReady()) return send({ type: "error", message: modelNotReady() });
       if (meeting) return send({ type: "error", message: "녹음 중에는 음성 작업을 할 수 없습니다." });
-      dictation = new Dictation(send, loadSettings().language);
+      dictation = new Dictation(send, loadSettings().language, message.mode === "paste" ? "paste" : "agent");
       return;
     }
     if (message.type === "dictate-stop" || message.type === "dictate-cancel") {

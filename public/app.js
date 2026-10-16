@@ -1,3 +1,4 @@
+import { dictionaryToText, parseDictionaryText } from "/shared/text-cleanup.mjs";
 const $ = (id) => document.getElementById(id);
 const SOURCE_HUES = { 마이크: 215, 화상회의: 150, 녹음: 215 };
 
@@ -1019,6 +1020,8 @@ function fillSettingsForm({ settings: s, vaults, diarizationReady, appVersion, s
   $("saveDirText").textContent = saveDir ?? "";
   renderHotkey(s.hotkey);
   if (typeof renderAgentHotkey === "function") renderAgentHotkey();
+  if (typeof renderDictationHotkey === "function") renderDictationHotkey();
+  $("dictionaryText").value = dictionaryToText(s.dictionary);
   const vaultSelect = $("vaultSelect");
   vaultSelect.replaceChildren(
     ...vaults.map((v) => Object.assign(new Option(`${v.name}${v.open ? " · 지금 열려 있음" : ""}`, v.path), { title: v.path })),
@@ -1389,7 +1392,53 @@ $("agentHotkeyButton").addEventListener("keydown", async (e) => {
   renderAgentTarget();
   renderShortcutHint();
   tellNative({ type: "hotkey2", hotkey: settings.agentHotkey });
+tellNative({ type: "hotkey3", hotkey: settings.dictationHotkey });
 });
+
+// 받아쓰기 단축키 (⌥D): 같은 입력 방식
+let listeningDictationKey = false;
+function renderDictationHotkey() {
+  $("dictationHotkeyButton").textContent = hotkeyLabel(settings?.dictationHotkey) || "없음";
+  $("dictationHotkeyButton").classList.remove("listening");
+}
+$("dictationHotkeyButton").onclick = () => {
+  listeningDictationKey = true;
+  $("dictationHotkeyButton").textContent = "키 조합을 누르세요…";
+  $("dictationHotkeyButton").classList.add("listening");
+};
+$("dictationHotkeyButton").onblur = () => {
+  listeningDictationKey = false;
+  renderDictationHotkey();
+};
+$("dictationHotkeyButton").addEventListener("keydown", async (e) => {
+  if (!listeningDictationKey) return;
+  e.preventDefault();
+  if (e.key === "Escape") return $("dictationHotkeyButton").blur();
+  if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+  const mods = [e.ctrlKey && "ctrl", e.altKey && "alt", e.shiftKey && "shift", e.metaKey && "cmd"].filter(Boolean);
+  if (!SUPPORTED_KEY.test(e.code) || !mods.some((m) => m !== "shift")) return;
+  listeningDictationKey = false;
+  ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify({ dictationHotkey: [...mods, e.code].join("+") }) }));
+  renderDictationHotkey();
+  tellNative({ type: "hotkey3", hotkey: settings.dictationHotkey });
+});
+
+// 용어 사전: 한 줄에 하나 "틀리게 들리는 말 => 바른 말". 글상자를 다 쓰고 나가면(change) 저장
+$("dictionaryText").addEventListener("change", async (e) => {
+  e.stopPropagation(); // 설정 폼 일반 저장과 따로 (사전은 배열이라)
+  try {
+    ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify({ dictionary: parseDictionaryText(e.target.value) }) }));
+    e.target.value = dictionaryToText(settings.dictionary);
+    $("savedBadge").textContent = "저장됨";
+    $("savedBadge").hidden = false;
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => ($("savedBadge").hidden = true), 1500);
+  } catch (error) {
+    $("savedBadge").textContent = `저장 실패: ${error.message}`;
+    $("savedBadge").hidden = false;
+  }
+});
+$("dictionaryText").addEventListener("input", (e) => e.stopPropagation());
 
 // 맥 앱이 단축키 등록 결과를 알려 준다 (다른 앱이 이미 쓰는 조합이면 실패)
 window.hotkeyResult = (ok, message) => {
@@ -1763,10 +1812,12 @@ async function handleAgentMessage(m) {
 // 말이 1.5초 멈추면 그 말을 작업으로 보내고, 답을 소리로 읽은 뒤 "띵"이 나면 다시 말하면 된다. 다시 누르면 끝.
 let heardText = null; // 지금 말하는 중인 말 (미리보기)
 let listenHint = "마이크 준비 중…";
-async function startDictation() {
+// "agent" = 말로 작업(⌥V) | "paste" = 아무 앱에 받아쓰기(⌥D): 끝내면 받아쓴 글을 지금 앞에 있는 앱에 붙여넣는다
+let dictationMode = "agent";
+async function startDictation(mode = "agent") {
   if (dictating || recording) return;
   if (model.state !== "ready") return;
-  if (!settings?.agentFolder) return openFolderPicker();
+  if (mode === "agent" && !settings?.agentFolder) return openFolderPicker();
   try {
     dictation = await openMic();
   } catch (error) {
@@ -1775,6 +1826,7 @@ async function startDictation() {
     return;
   }
   dictating = true;
+  dictationMode = mode;
   lastActivity = "agent";
   barNote = null;
   heardText = null;
@@ -1782,7 +1834,7 @@ async function startDictation() {
   agentWave.attach(dictation.analyser);
   $("workButton").classList.add("listening");
   $("workButton").setAttribute("aria-label", "대화 중 · 누르면 끝");
-  ws.send(JSON.stringify({ type: "dictate-start" }));
+  ws.send(JSON.stringify({ type: "dictate-start", mode }));
   renderBar();
   reportState();
 }
@@ -1935,13 +1987,17 @@ document.addEventListener("keydown", (e) => {
 function handleDictation(m) {
   if (m.type === "dictate-ready") {
     // 처음 마이크가 켜졌을 때, 그리고 답을 다 읽은 뒤: 이제 말할 차례
-    listenHint = "말하세요 · 작업 버튼을 다시 누르면 끝";
+    listenHint =
+      dictationMode === "paste"
+        ? `말하세요 · ${hotkeyLabel(settings?.dictationHotkey) || "단축키"}를 다시 누르면 붙여넣기`
+        : "말하세요 · 작업 버튼을 다시 누르면 끝";
     if (!agentBusy) barNote = null;
   }
   if (m.type === "dictate-partial") heardText = m.text || null;
   if (m.type === "dictation") {
     heardText = null;
-    sendAgent(m.text);
+    if (m.mode === "paste") pasteText(m.text);
+    else sendAgent(m.text);
   }
   if (m.type === "dictate-end") {
     stopDictation({ ended: true });
@@ -1953,8 +2009,40 @@ function handleDictation(m) {
 // 맥 앱 단축키(⌥V)·메뉴: 막대에서 바로 듣기
 function agentTalk() {
   if (recording) return;
-  dictating ? stopDictation() : startDictation();
+  dictating ? stopDictation() : startDictation("agent");
 }
+
+// 맥 앱 단축키(⌥D): 누르면 듣기, 다시 누르면 받아써서 지금 앱에 붙여넣기
+function dictateToggle() {
+  if (recording) return;
+  if (dictating) return stopDictation(); // 말로 작업 중이었어도 끝낸다 (두 번 눌러 받아쓰기를 다시 시작)
+  startDictation("paste");
+}
+
+// 붙여넣기는 운영체제마다 다르다: 이 함수 하나만 플랫폼별로 바뀐다.
+// 맥 앱: 네이티브(MeetingNotesApp.swift)가 클립보드에 넣고 ⌘V를 보낸 뒤 원래 클립보드를 되돌린다.
+// 다른 플랫폼(앞으로 Windows 등)은 같은 { type: "paste", text } 메시지를 받아 처리하면 된다.
+// 네이티브가 없으면(브라우저) 클립보드에 복사만 한다.
+function pasteText(text) {
+  if (!text) return;
+  if (isMacApp) return tellNative({ type: "paste", text });
+  navigator.clipboard?.writeText(text).then(
+    () => showPasteResult(true, "클립보드에 복사했습니다"),
+    () => showPasteResult(false, "클립보드에 복사하지 못했습니다"),
+  );
+}
+// 네이티브가 붙여넣기 결과를 알려 준다 (손쉬운 사용 권한이 없으면 클립보드에만 넣고 안내)
+function showPasteResult(ok, message) {
+  barNote = ok ? (message || "붙여넣었습니다") : message;
+  renderBar();
+  setTimeout(() => {
+    if (barNote === message || barNote === "붙여넣었습니다") {
+      barNote = null;
+      renderBar();
+    }
+  }, ok ? 3000 : 10000);
+}
+window.pasteResult = showPasteResult;
 
 // ───────── 시작 ─────────
 
@@ -2018,6 +2106,7 @@ window.app = {
   openSettings,
   toggleRecording,
   agentTalk,
+  dictateToggle,
   modelAction,
   importFile: () => !recording && $("importInput").click(),
   openFolder: () => api("/api/open-folder", { method: "POST" }),
