@@ -10,7 +10,7 @@
     "build:dist": "native/app/build-app.sh --dist",
     "build:dist:offline": "native/app/build-app.sh --dist --with-model"
   },
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "sherpa-onnx-node": "^1.13.8",
