@@ -1,0 +1,187 @@
+# voin 업그레이드 로드맵
+
+> 버전은 **0.1.0 그대로** 가. 마일스톤은 단계(1·2·3·4·출시 준비)로만 나눴어.
+> 근거: GitHub `su-record/voin` 공개 레포(커밋 `40c0971`, 2026-10-16)를 읽기만 했어.
+
+## 1. 지금 상태
+
+### 강점 (파일 근거)
+- **로컬 받아쓰기 + 모델 선택 7종**: `lib/model-catalog.mjs`, `lib/model-store.mjs`. SHA-256 확인, 이어받기, Handy 캐시 재사용까지 돼.
+- **화자 분리가 실전 검증됨**: `lib/diarize-worker.mjs`. 52분·4명 회의를 정확히 4명으로 나눴어(README).
+- **회의 소리 캡처**: `native/syscap.swift`로 Zoom·Teams 시스템 오디오를 받아.
+- **정리 중에 꺼져도 이어서 함**: `~/Library/Application Support/MeetingNotes/tmp/` 작업 기록.
+- **요약 방법이 많음**: `lib/summarizer.mjs`. CLI, OAuth(`lib/oauth-login.mjs`), API 키(키체인 저장), OpenAI 호환 주소, Ollama 중에 고를 수 있어.
+- **Obsidian 연결**: `lib/obsidian-links.mjs`. 데일리 노트, 이전 기록, 참석자를 자동으로 링크해.
+- **음성 작업**: `lib/agent.mjs`가 Codex app-server, Claude Code(`lib/approval-mcp.mjs`로 승인), Grok(ACP)에 일을 시키고 화면 카드로 승인받아.
+- **전역 단축키**: `MeetingNotesApp.swift:598`, Carbon `RegisterEventHotKey`. ⌥R 녹음, ⌥V 작업.
+- **서버는 로컬에서만 열림**: `server.mjs:1142`이 `127.0.0.1`에서만 listen해.
+
+### 빈 곳
+| 빈 곳 | 근거 |
+|---|---|
+| 다른 앱에 받아쓰기를 바로 넣는 기능 없음 | `NSPasteboard`, `CGEvent`, `AXIsProcessTrusted`가 코드에 없어 |
+| 용어 사전 없음 | README에 "용어 사전을 지원하지 않습니다"라고 적혀 있어 |
+| 군말·말 바꿈 정리 없음 | 받아쓴 글을 다듬는 단계가 없어. 요약만 있어 |
+| 서명·공증 안 됨 | `build-app.sh:82-106`이 ad-hoc 서명(`--sign -`)만 해 |
+| 자동 업데이트 없음 | Sparkle 같은 업데이트 코드가 없어 |
+| 테스트 없음 | test 폴더도, `npm test`도 없어 |
+| 거대 파일 | `public/app.js` 2045줄, `server.mjs` 1145줄 |
+| 이름이 섞여 있음 | 앱 이름은 voin인데 데이터 폴더는 `MeetingNotes`, Swift 파일은 `MeetingNotesApp.swift`야 |
+| OAuth 차용 위험 | ChatGPT·Grok 로그인은 다른 CLI의 클라이언트 ID를 빌려 써. 막히면 바로 안 돼(README에 적혀 있음) |
+| 에코 | 스피커로 들으면 상대 말이 두 번 기록돼. 지금은 이어폰을 쓰라는 안내뿐이야 |
+
+## 2. 포지셔닝
+**"회의는 맥 밖으로 안 나가고, 말 한마디로 에이전트가 일하는 앱"**
+- 대상: 개발자랑 창업자. Claude Code, Codex, Grok을 매일 쓰고 회의도 많은 사람.
+- Typeless는 "어디서든 말로 글쓰기"고, voin은 "회의 기록 + 말로 일 시키기"야. 받아쓰기 정면 승부는 피하고, Typeless 쓰던 사람이 아쉬워할 기본기(아무 앱에 입력, 사전, 다듬기)만 채워.
+- 한 줄 카피: "회의록은 로컬에, 할 일은 에이전트에게."
+
+## 3. 단계별 계획 (버전 0.1.0 유지)
+
+### 1단계: 바로 효과 보는 것 (1~2주)
+> 진행: 1-1·1-2·1-3·1-5는 `phase1` 브랜치에 구현했어(맥에서 확인 필요). 1-4 이름 정리는 기존 사용자 데이터가 깨질 수 있어서 보류했어.
+
+**1-1. 아무 앱에 받아쓰기 넣기 (받아쓰기 모드)**
+- 왜: Typeless 쓰던 사람이 가장 먼저 찾는 기능이야. 이게 있어야 매일 열게 돼.
+- 어떻게: `MeetingNotesApp.swift`에 세 번째 단축키(예: ⌥D)를 추가해. 누르고 있는 동안 녹음하고, 떼면 `transcriber.mjs` 결과를 받아. 붙여넣기는 `NSPasteboard`에 쓰고 `CGEvent`로 ⌘V를 보낸 다음, 원래 클립보드를 복구해. 권한은 `AXIsProcessTrustedWithOptions`로 손쉬운 사용 권한을 확인하고 안내해. 서버는 `/api/dictate` 엔드포인트 하나만 추가하면 돼.
+- 난이도: M
+- 위험: 손쉬운 사용 권한은 ad-hoc 서명이면 빌드할 때마다 풀릴 수 있어(출시 준비 단계 5-1 서명이 해결해). 비밀번호 칸에서는 붙여넣기가 막혀.
+
+**1-2. 용어 사전**
+- 왜: 사람 이름, 제품명, 영어 약어가 틀리는 게 제일 거슬려. Nemotron은 약어를 한글 소리로 적어(README).
+- 어떻게: `lib/settings.mjs`에 `dictionary: [{from, to}]`를 추가해. 받아쓴 뒤에 치환하는 후처리를 `lib/transcriber.mjs` 출력 단계에 붙여. 화자 이름 바꾸기 로직(`meeting-record.mjs`)을 재사용할 수 있어. 설정 화면은 `public/app.js`에 넣어.
+- 난이도: S
+- 위험: 과하게 치환될 수 있어. 낱말 경계 기준으로만 바꿔.
+
+**1-3. 군말 제거 (규칙 기반)**
+- 왜: "음, 어, 그니까" 같은 말만 빠져도 체감이 커.
+- 어떻게: 정규식 목록으로 처리하고 설정에서 켜고 끌 수 있게 해. 받아쓰기 모드에만 기본으로 켜고, 회의록은 원문을 보존해.
+- 난이도: S
+- 위험: 뜻 있는 "어"까지 지워질 수 있어.
+
+**1-4. 이름 정리**
+- 왜: `MeetingNotes`와 `회의록.app`이 남아 있으면 헷갈려.
+- 어떻게: 데이터 폴더를 `~/Library/Application Support/voin`으로 옮기고, 처음 실행할 때 예전 폴더를 이동하는 마이그레이션을 넣어.
+- 난이도: S
+- 위험: 옮기다 실패하면 기록이 사라진 것처럼 보여. 복사하고 확인한 다음에 지워.
+
+**1-5. 최소 테스트 + CI**
+- 왜: 혼자 빠르게 고치려면 회귀를 막는 안전망이 필요해.
+- 어떻게: `node --test`로 `meeting-record`, `obsidian-links`, `summarizer` 파싱을 테스트해. `samples/4명-테스트.wav`로 스모크 테스트를 하고, GitHub Actions macOS 러너에서 돌려.
+- 난이도: S
+- 위험: 모델이 751MB라 CI에서 받아쓰기는 작은 모델이나 캐시로 해야 해.
+
+### 2단계: Windows 지원 (4~6주)
+> 원칙: 서버(`server.mjs`, `lib/`)와 화면(`public/`)은 그대로 같이 쓰고, 운영체제마다 다른 건 얇은 껍데기 하나에 몰아. 1단계에서 붙여넣기를 `TextPaster` 프로토콜(Swift)과 `pasteText()`(화면) 뒤로 숨겨 둔 게 그 첫 칸이야.
+
+**2-1. 시스템 오디오: WASAPI 루프백 (`syscap.swift` 대체)**
+- 왜: Zoom·Teams 상대방 소리를 받는 게 voin 회의록의 핵심이야. 맥은 `syscap.swift`(ScreenCaptureKit/Core Audio 탭)가 맡는데 Windows엔 없어.
+- 어떻게: 작은 네이티브 도우미 `native/win/syscap.exe`(C++ 또는 Rust `wasapi`/`cpal` 크레이트)를 만들어. 기본 출력 장치를 `AUDCLNT_STREAMFLAGS_LOOPBACK`으로 열고 16kHz mono float32로 바꿔서 stdout으로 내보내. `syscap.swift`와 같은 출력 형식(같은 프레임, 같은 종료 신호)을 지키면 `lib/audio.mjs`는 실행 파일 경로만 바꾸면 돼. Windows 10 2004+에선 프로세스 단위 루프백(`ActivateAudioInterfaceAsync` + `PROCESS_LOOPBACK`)으로 특정 앱만 받을 수도 있어.
+- 난이도: M
+- 위험: 무음일 때 루프백은 데이터를 안 보내(맥 시스템 오디오와 같아서 `clock: "wall"` 처리가 그대로 맞아). 블루투스 헤드셋·전용 모드 장치에서 끊길 수 있어. 장치가 바뀌면 다시 열어야 해.
+
+**2-2. 전역 단축키 + 붙여넣기 (SendInput)**
+- 왜: ⌥R/⌥V/⌥D가 Windows에서도 똑같이 돼야 해.
+- 어떻게: 단축키는 `RegisterHotKey`(Alt는 `MOD_ALT`, 기본값은 Alt+R/V/D로 같은 문자열 형식 `alt+KeyD`를 그대로 해석). 붙여넣기는 `TextPaster`의 Windows 구현이야: 클립보드(`OpenClipboard`/`SetClipboardData(CF_UNICODETEXT)`)에 넣고 `SendInput`으로 Ctrl+V를 보낸 뒤, 원래 클립보드를 되돌려(`GetClipboardSequenceNumber`로 그사이 바뀌었는지 확인). Windows는 손쉬운 사용 권한이 없어서 권한 안내는 필요 없어. 화면 쪽 `pasteText()`는 메시지 `{ type: "paste", text }`만 보내면 돼.
+- 난이도: S~M
+- 위험: 관리자 권한으로 돈 앱(UIPI) 창에는 SendInput이 안 들어가. 단축키 Alt 조합은 메뉴 단축키와 겹칠 수 있어. 한글 IME 조합 중이면 붙여넣기가 꼬일 수 있어.
+
+**2-3. 패키징: Electron 또는 Tauri로 맥+윈도 하나로**
+- 왜: 지금 껍데기는 Swift(WKWebView)라 맥 전용이야. 화면과 서버가 이미 웹+Node라 껍데기만 바꾸면 돼.
+- 어떻게: 두 갈래를 비교해.
+  - Electron: Node가 들어 있어서 `server.mjs`를 메인 프로세스에서 바로 돌려. `globalShortcut`, `clipboard`, 트레이가 기본이라 제일 빨라. 대신 앱이 커져(+100MB 안팎).
+  - Tauri: 앱이 작고(웹뷰는 OS 것) Rust라 WASAPI·SendInput을 같은 코드에 넣기 좋아. 대신 Node 서버는 사이드카(`bin/node` + `server.mjs`)로 따로 실행해야 해.
+  - 추천: 먼저 Electron으로 Windows를 빨리 내고, 맥은 당분간 Swift 껍데기를 유지해. 둘 다 같은 `window.app.*`/`tellNative` 메시지 규약을 쓰게 하면 나중에 하나로 합치기 쉬워.
+- 난이도: L
+- 위험: 맥 고유 기능(Liquid Glass, SF Symbols, 메뉴 막대 세부 동작)이 빠져. 껍데기를 두 개 유지하는 동안은 기능 차이가 생겨.
+
+**2-4. 받아쓰기 엔진 Windows 빌드 확인**
+- 왜: `sherpa-onnx-node`(화자 분리)와 `transcribe-cpp`(받아쓰기)가 win32-x64용 미리 빌드된 바이너리를 주는지가 일정 전체를 좌우해.
+- 어떻게: GitHub Actions `windows-latest`에서 `npm ci` → 모델 로드 → `samples/` 짧은 음성 받아쓰기까지 스모크 테스트를 돌려. 미리 빌드된 게 없으면 MSVC로 직접 빌드(CMake)하고, GPU는 처음엔 CPU만, 다음에 DirectML/CUDA를 검토해. arm64 Windows는 나중으로 미뤄.
+- 난이도: M (바이너리가 있으면 S)
+- 위험: 맥에선 Metal로 빠르던 모델이 Windows CPU에선 느릴 수 있어. 작은 모델을 기본값으로 둬야 할 수도 있어. 경로(`~/Library/Application Support`)를 `%APPDATA%\voin`으로 바꾸는 분기가 `lib/settings.mjs`·`model-store.mjs`에 필요해.
+
+**2-5. Windows 코드 서명**
+- 왜: 서명 없는 exe는 SmartScreen "Windows의 PC 보호" 경고가 떠서 대부분 여기서 이탈해.
+- 어떻게: 인증서는 Azure Trusted Signing(월 소액, 개인 사업자도 가능한지 확인)이나 OV/EV 코드 서명 인증서(연 수십만 원, 하드웨어 토큰)를 써. `signtool sign /tr <타임스탬프> /td sha256 /fd sha256`으로 exe·설치 파일·네이티브 도우미(`syscap.exe`)를 모두 서명해. 설치는 Electron이면 NSIS/Squirrel, Tauri면 MSI/NSIS. 자동 업데이트(5-2)도 서명된 설치 파일을 기준으로 해.
+- 난이도: M
+- 위험: OV 인증서도 처음엔 SmartScreen 평판이 없어 경고가 날 수 있어(다운로드가 쌓여야 사라져). 인증서 비용과 연 갱신.
+
+**2단계 전체**: 노력은 1인 기준 4~6주(엔진 바이너리가 있으면 앞쪽). 가장 큰 위험은 2-4(엔진 빌드)와 2-3(껍데기 선택)이라 이 둘을 먼저 1주 안에 확인하고 나머지를 진행해. 버전은 계속 0.1.0이야.
+
+### 3단계: 다듬기와 에이전트 강화 (3~5주)
+**3-1. LLM 다듬기 (선택)**
+- 왜: 말 바꿈 정리, 목록 자동화, 앱별 말투는 Typeless의 핵심이야.
+- 어떻게: `summarizer.mjs`의 제공자 선택을 재사용해. 짧은 프롬프트로 "고쳐쓰기만" 시키고, 기본값은 Ollama(로컬)로 둬. 앞에 있는 앱은 `NSWorkspace.frontmostApplication`으로 알아내서 말투 프리셋을 골라.
+- 난이도: M
+- 위험: 지연이 늘어나. 외부 API를 쓰면 로컬 우선이라는 원칙이 흔들려. 외부로 보낼 때는 화면에 표시해.
+
+**3-2. 선택한 글을 말로 고치기**
+- 왜: "이거 더 짧게", "영어로" 같은 지시를 말로 할 수 있어.
+- 어떻게: 선택한 글은 Accessibility API(`AXUIElementCopyAttributeValue` + `kAXSelectedTextAttribute`)로 읽고, 실패하면 ⌘C로 대체해. 결과는 1-1의 붙여넣기 경로로 넣어.
+- 난이도: M
+- 위험: 앱마다 AX 지원이 제각각이야(Electron, 웹 앱).
+
+**3-3. 회의 → 에이전트 연결**
+- 왜: voin만 할 수 있는 차별점이야. 회의에서 나온 할 일을 바로 에이전트에 넘길 수 있어.
+- 어떻게: 요약의 "할 일" 항목 옆에 "에이전트에게" 버튼을 붙이고 `agent.mjs`로 작업 폴더와 함께 전달해. GitHub 이슈나 Linear로 내보내기도 추가해.
+- 난이도: M
+- 위험: 승인 흐름을 유지해야 해. 기본은 읽기 전용으로 둬.
+
+**3-4. 에코 제거**
+- 왜: 스피커로 들을 때 생기는 중복 기록을 없애.
+- 어떻게: 시스템 오디오를 기준 신호로 써서 마이크 구간과 겹치는 문장을 텍스트 유사도와 시간으로 제거해(`meeting-record.mjs`). 나중에는 `AVAudioEngine` voice processing(AEC)도 검토해.
+- 난이도: M
+- 위험: 실제로 동시에 한 말까지 지워질 수 있어.
+
+**3-5. 코드 쪼개기**
+- 왜: `app.js` 2045줄, `server.mjs` 1145줄이면 고칠 때마다 위험해.
+- 어떻게: 화면별 ES 모듈로 나누고, 서버는 라우트별 파일로 나눠. 1-5 테스트를 먼저 깔아.
+- 난이도: M
+- 위험: 회귀. 테스트로 막아.
+
+### 4단계: 넓히기 (6~10주)
+**4-1. 회의 자동 감지**: Zoom이나 Teams 프로세스와 오디오 활동을 보고 "녹음할까?" 알림을 띄워. `NSWorkspace` 알림 + `UNUserNotificationCenter`를 써. 난이도 M. 위험: 동의 없이 녹음하는 걸로 보이면 안 돼. 반드시 묻고 시작해.
+**4-2. 기록 검색·질문**: 지난 회의 전체를 로컬 임베딩(Ollama)으로 검색하고 "지난주 결정 뭐였지?"에 답해. 난이도 L. 위험: 인덱스 크기와 성능.
+**4-3. 말하면서 번역**: 받아쓰기 모드에 대상 언어 옵션을 추가해(3-1 경로). 난이도 S. 위험: 품질은 제공자에 달려 있어.
+**4-4. 음성 명령 확장**: "Claude한테 테스트 돌려줘" 같은 말로 도구와 폴더를 고르는 라우팅을 `agent.mjs`에 넣어. 난이도 M. 위험: 잘못 알아들으면 엉뚱한 작업을 해. 실행 전에 확인 카드를 띄워.
+**4-5. OAuth 차용 정리**: 공식 경로(API 키, CLI)를 기본으로 두고 차용 방식은 "실험적"으로 표시해. 난이도 S. 위험: 차용 방식이 막혀도 사용자가 갑자기 멈추는 일이 줄어.
+
+### 출시 준비 단계 (버전은 계속 0.1.0)
+**5-1. 코드 서명 + 공증**
+- 왜: "그래도 열기"는 사용자가 이탈하는 1순위야. 손쉬운 사용 권한이 유지되려면 고정된 서명이 필요해.
+- 어떻게: Apple Developer($99/년)에 가입하고 Developer ID Application 인증서를 받아. `build-app.sh` 82~106줄의 `--sign -`를 `--sign "Developer ID…" --options runtime --timestamp`로 바꾸고 entitlements를 추가해(마이크, `com.apple.security.cs.allow-jit`는 Node용). `.node`, `.dylib`, `bin/node`, `syscap` 순서로 서명한 다음 `xcrun notarytool submit --wait`, `xcrun stapler staple` 순서로 처리해. CI에서는 키를 GitHub Secrets에 넣어.
+- 난이도: M
+- 위험: 번들 안의 Node와 네이티브 애드온이 hardened runtime에서 막힐 수 있어. entitlements를 시험해야 해.
+
+**5-2. 자동 업데이트**
+- 왜: 빨리 고치고 바로 배포하는 게 1인 개발의 무기야.
+- 어떻게: Swift 껍데기에 Sparkle 2를 넣고, EdDSA로 서명한 appcast.xml을 GitHub Releases나 Pages에 올려. 버전을 0.1.0으로 유지하는 동안에는 `CFBundleVersion`(빌드 번호)만 올려서 업데이트를 판별해. 표시 버전은 0.1.0 그대로야.
+- 난이도: M
+- 위험: 업데이트 서명 키를 잃어버리면 갱신 경로가 끊겨. 키는 백업해.
+
+**5-3. 온보딩**
+- 왜: 권한이 4개(마이크, 시스템 오디오, 손쉬운 사용, 알림)고 모델 다운로드도 있어. 첫 5분에서 사람이 떨어져 나가.
+- 어떻게: 첫 실행 마법사를 만들어. 권한 단계별로 상태를 확인하고 해당 시스템 설정을 열어줘. 모델 다운로드 진행률을 보여주고, `samples/` 음성으로 30초 체험을 넣어. 화면은 `public/`에 만들어.
+- 난이도: M
+- 위험: macOS 버전마다 권한 화면 경로가 달라.
+
+**5-4. 크래시·문제 보고 (사용자 동의 시)**: `voin.log`를 첨부해 GitHub 이슈로 보내는 버튼을 만들어. 원격 수집은 하지 않아. 난이도 S.
+
+## 4. 수익화·배포 아이디어
+- **오픈소스 코어는 무료로**(MIT 유지): 받아쓰기, 회의록, 화자 분리, 에이전트.
+- **Pro 일회성 결제**(예: $29~49, Gumroad/Lemon Squeezy): 받아쓰기 모드 다듬기 프리셋, 기록 검색·질문, 팀 공유 폴더 고급 기능. 구독보다 1인 개발에 부담이 적어.
+- **팀/회사 라이선스**: "회의가 맥 밖으로 안 나감"을 보안 문서 한 장으로 정리해서 영업해. 사내 게이트웨이(OpenAI 호환 주소) 지원이 이미 있다는 게 강점이야.
+- **배포 채널**: GitHub Releases + Homebrew cask, X/LinkedIn 데모 영상(말 한마디 → Claude Code가 PR 생성), Show HN, GeekNews, Product Hunt.
+- Mac App Store는 샌드박스 때문에 시스템 오디오, 손쉬운 사용, CLI 실행이 어려워. 일단 빼.
+
+## 5. 볼 지표
+- 다운로드 → 첫 녹음 완료 비율 (온보딩 이탈)
+- 권한 단계별 이탈 (특히 시스템 오디오와 손쉬운 사용)
+- 주간 활성 사용자, 주당 녹음 수, 주당 받아쓰기 모드 사용 횟수
+- 음성 작업 실행 수, 승인·거절 비율
+- 화자 분리 수정률 (이름 바꾸기 외에 화자를 합치거나 나누는 빈도)
+- 사전 등록 수, 받아쓰기 후 사용자가 직접 고친 비율
+- GitHub 별, 이슈, Pro 전환율
+
+> 지표는 로컬에만 집계하거나, 사용자가 동의했을 때만 익명으로 보내. 로컬 우선 원칙과 맞아야 해.
