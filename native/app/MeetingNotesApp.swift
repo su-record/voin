@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     var hotkeyString = ""
     var agentKey = HotKey(id: 2)
     var agentKeyString = ""
+    var dictateKey = HotKey(id: 3)
+    var dictateKeyString = ""
+    let paster: TextPaster = MacPaster()
     var statusTimer: Timer?
     let barHeight: CGFloat = 56 // 웹 화면의 막대 높이와 같게
     // 판을 끌어서 맞춘 길이: 다음에 열 때와 앱을 다시 켰을 때도 그 길이로
@@ -121,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         statusTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.pollStatus() }
         hotkey.onPress = { [weak self] in self?.toggleRecording() }
         agentKey.onPress = { [weak self] in self?.agentTalk() }
+        dictateKey.onPress = { [weak self] in self?.dictate() }
 
         showMessage("모델을 불러오는 중입니다…", detail: "처음 실행할 때 10초 정도 걸립니다.")
         Task { await startServerAndLoad() }
@@ -270,6 +274,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         case "hotkey2":
             agentKeyString = json["hotkey"] as? String ?? ""
             _ = agentKey.register(agentKeyString)
+        case "hotkey3":
+            dictateKeyString = json["hotkey"] as? String ?? ""
+            _ = dictateKey.register(dictateKeyString)
+        case "paste":
+            // 받아쓰기(⌥D) 결과를 지금 앞에 있는 앱에 붙여넣는다. 결과(성공/권한 없음)는 막대에 표시
+            let result = paster.paste(json["text"] as? String ?? "")
+            let args = (try? JSONSerialization.data(withJSONObject: [result.ok, result.message])).flatMap { String(data: $0, encoding: .utf8) } ?? "[true,\"\"]"
+            webView.evaluateJavaScript("window.pasteResult?.(...\(args))")
         case "symbols":
             let wanted = (json["symbols"] as? [[String: Any]] ?? []).compactMap { item -> (String, CGFloat)? in
                 guard let name = item["name"] as? String else { return nil }
@@ -396,6 +408,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.callWeb("agentTalk") }
         } else {
             callWeb("agentTalk")
+        }
+    }
+    // 아무 앱에 받아쓰기(⌥D): 창을 띄우되 활성화하지 않아(orderFrontRegardless) 지금 쓰던 앱이 앞에 남고,
+    // 다시 누르면 받아쓴 글이 그 앱에 붙는다. 처음 누를 때 손쉬운 사용 권한을 미리 묻는다(붙여넣기 때 필요)
+    @objc func dictate() {
+        guard Date().timeIntervalSince(lastToggle) > 0.4 else { return }
+        lastToggle = Date()
+        paster.prepare()
+        if !window.isVisible {
+            window.orderFrontRegardless()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.callWeb("dictateToggle") }
+        } else {
+            callWeb("dictateToggle")
         }
     }
     @objc func openFolder() { callWeb("openFolder") }
@@ -527,6 +552,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         talk.target = self
         talk.isEnabled = !webState.recording && webState.model?.state == "ready"
         HotKey.describe(agentKeyString, on: talk)
+        let dictateItem = menu.addItem(withTitle: "아무 앱에 받아쓰기", action: #selector(dictate), keyEquivalent: "")
+        dictateItem.target = self
+        dictateItem.isEnabled = !webState.recording && webState.model?.state == "ready"
+        HotKey.describe(dictateKeyString, on: dictateItem)
         let importItem = menu.addItem(withTitle: "녹음 파일 불러오기…", action: #selector(importFile), keyEquivalent: "")
         importItem.target = self
         importItem.isEnabled = ready && !webState.recording
@@ -675,6 +704,74 @@ final class HotKey {
         if parts.contains("ctrl") { mask.insert(.control) }
         if parts.contains("shift") { mask.insert(.shift) }
         item.keyEquivalentModifierMask = mask
+    }
+}
+
+// ───────── 붙여넣기 (플랫폼 경계) ─────────
+// 받아쓴 글을 지금 앞에 있는 앱의 커서 자리에 넣는다. 플랫폼마다 이 프로토콜만 구현하면 된다
+// (Windows라면 클립보드 + SendInput(Ctrl+V)).
+protocol TextPaster {
+    func prepare() // 권한이 필요하면 미리 묻는다
+    func paste(_ text: String) -> (ok: Bool, message: String)
+}
+
+// macOS: 클립보드(NSPasteboard)에 넣고 CGEvent로 ⌘V를 보낸 뒤, 잠시 후 원래 클립보드를 되돌린다.
+// ⌘V를 보내려면 손쉬운 사용 권한이 필요하다. 없으면 클립보드에만 넣고(되돌리지 않음) 권한을 안내한다.
+final class MacPaster: TextPaster {
+    private var asked = false
+
+    func prepare() {
+        guard !asked, !AXIsProcessTrusted() else { return }
+        asked = true
+        // 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용 에 voin을 켜 달라는 시스템 창을 띄운다
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    func paste(_ text: String) -> (ok: Bool, message: String) {
+        guard !text.isEmpty else { return (true, "") }
+        let board = NSPasteboard.general
+        guard AXIsProcessTrusted() else {
+            board.clearContents()
+            board.setString(text, forType: .string)
+            prepare()
+            return (false, "클립보드에 넣었습니다 · ⌘V로 붙여넣으세요 (자동 붙여넣기는 손쉬운 사용 권한에서 voin을 켜면 됩니다)")
+        }
+        let saved = Self.snapshot(board)
+        board.clearContents()
+        board.setString(text, forType: .string)
+        let ours = board.changeCount
+        Self.sendCommandV()
+        // 붙여넣는 앱이 클립보드를 읽을 시간을 준 뒤 되돌린다. 그사이 사용자가 다른 걸 복사했으면 건드리지 않는다
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            guard board.changeCount == ours else { return }
+            board.clearContents()
+            if !saved.isEmpty { board.writeObjects(saved) }
+        }
+        return (true, "붙여넣었습니다")
+    }
+
+    // 클립보드 항목을 형식별로 복사해 둔다 (NSPasteboardItem은 클립보드가 바뀌면 못 쓰게 되므로 새로 만든다)
+    private static func snapshot(_ board: NSPasteboard) -> [NSPasteboardItem] {
+        (board.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) { copy.setData(data, forType: type) }
+            }
+            return copy
+        }
+    }
+
+    // ⌘V: 단축키(⌥D)의 수식키가 섞이지 않도록 Command만 지정한다
+    private static func sendCommandV() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let key = CGKeyCode(kVK_ANSI_V)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+        down?.flags = .maskCommand
+        up?.flags = .maskCommand
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
     }
 }
 
