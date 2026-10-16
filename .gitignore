@@ -1,0 +1,6 @@
+node_modules/
+meetings/
+models/
+native/syscap
+native/app/build/
+dist/

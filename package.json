@@ -1,0 +1,21 @@
+{
+  "name": "voin",
+  "version": "0.1.0",
+  "description": "이 맥의 마이크와 화상회의 소리를 받아쓰는 로컬 회의록 앱",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "build:native": "swiftc -O native/syscap.swift -o native/syscap -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/Info.plist",
+    "build:app": "native/app/build-app.sh",
+    "build:dist": "native/app/build-app.sh --dist",
+    "build:dist:offline": "native/app/build-app.sh --dist --with-model"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "sherpa-onnx-node": "^1.13.8",
+    "transcribe-cpp": "^0.4.0",
+    "ws": "^8.22.0"
+  },
+  "private": true
+}
