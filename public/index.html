@@ -136,6 +136,7 @@
           <a href="#set-asr">받아쓰기</a>
           <a href="#set-diar">화자 분리</a>
           <a href="#set-summary">요약</a>
+          <a href="#set-dictation">아무 앱에 받아쓰기</a>
           <a href="#set-agent">음성 작업</a>
           <a href="#set-about">정보</a>
         </nav>
@@ -280,6 +281,24 @@
             <h3>API 키 <span class="hint">키는 맥 키체인에 저장되고 화면에 다시 보이지 않습니다. 사용량만큼 해당 회사에 요금이 나갑니다</span></h3>
             <div class="card" id="providerApi"></div>
             <div class="provider-footer"><button id="recheckProviders" type="button">상태 다시 확인</button></div>
+          </section>
+
+          <section id="set-dictation" class="group">
+            <h2>아무 앱에 받아쓰기</h2>
+            <div class="card">
+              <div class="row" data-mac-only>
+                <div class="row-text"><span class="row-title">받아쓰기 단축키</span><span class="hint">어느 앱에서든 누르면 듣기 시작, 다시 누르면 받아쓴 글을 커서 자리에 붙여넣습니다. 처음 한 번 손쉬운 사용 권한이 필요합니다.</span></div>
+                <div class="row-control"><button id="dictationHotkeyButton" class="hotkey" type="button"></button></div>
+              </div>
+              <div class="row">
+                <div class="row-text"><span class="row-title">군말 지우기</span><span class="hint">"음", "어,", "um", "uh" 같은 말과 바로 반복한 말을 지웁니다. 회의록은 원문 그대로 둡니다.</span></div>
+                <div class="row-control"><input name="dictationFillers" type="checkbox" class="switch" aria-label="군말 지우기"></div>
+              </div>
+              <div class="row stacked">
+                <div class="row-text"><span class="row-title">용어 사전</span><span class="hint">한 줄에 하나씩 <code>틀리게 들리는 말 =&gt; 바른 말</code>. 바른 말만 적으면 받아쓰기 힌트로만 씁니다. 회의록과 받아쓰기 모두에 적용됩니다.</span></div>
+                <textarea id="dictionaryText" rows="5" spellcheck="false" aria-label="용어 사전" placeholder="쿠버네티스 => Kubernetes&#10;지피티 => GPT&#10;Sutory"></textarea>
+              </div>
+            </div>
           </section>
 
           <section id="set-agent" class="group">

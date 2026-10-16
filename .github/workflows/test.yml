@@ -1,0 +1,14 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    # 순수 함수 테스트만 돌린다 (모델·네이티브 모듈 불필요). 받아쓰기 스모크 테스트는 macOS 러너 + 작은 모델로 나중에
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test

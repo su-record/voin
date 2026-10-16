@@ -522,3 +522,7 @@ body.glass .bar-main:hover:not(:disabled) { background: transparent; box-shadow:
 /* 녹음·듣는 중: 바탕 대신 색 선으로 */
 .bar-main.rec.recording { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
 .bar-main.work.listening { background: transparent; color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
+
+/* 용어 사전: 제목 아래에 글상자를 넓게 */
+.row.stacked { flex-direction: column; align-items: stretch; }
+#dictionaryText { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border, rgba(128,128,128,.35)); background: transparent; color: inherit; resize: vertical; }
