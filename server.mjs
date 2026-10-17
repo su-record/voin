@@ -30,7 +30,9 @@ import {
   saveApiKey,
   suggestSpeakerNames,
   summarize,
+  translateLocal,
 } from "./lib/summarizer.mjs";
+import { translateRecord } from "./lib/translation.mjs";
 import { findCatalogModel } from "./lib/model-catalog.mjs";
 import {
   activeModelEntry,
@@ -220,6 +222,18 @@ function offsetFromTimeline(timeline, sample) {
   return anchor[1] + ((sample - anchor[0]) * 1000) / SAMPLE_RATE;
 }
 
+// 설정에서 켰으면 외국어 줄 아래에 한국어 번역을 붙인다. 실패하면 경고 글을 돌려준다(기록은 그대로).
+async function translateFile(filePath, settings, onProgress) {
+  if (!settings.translateForeign) return undefined;
+  onProgress("외국어 번역 중…");
+  try {
+    await translateRecord(filePath, (text) => translateLocal(text, settings.summaryModels.voin));
+  } catch (error) {
+    console.error("번역 실패:", error);
+    return `번역하지 못했습니다: ${error.message}`;
+  }
+}
+
 // 기록 파일에 요약을 붙인다. 설정에서 끄거나 쓸 도구가 없으면 건너뛴다. 실패하면 경고 글을 돌려준다(기록은 그대로).
 async function summarizeFile(filePath, onProgress, { required = false } = {}) {
   const settings = loadSettings();
@@ -266,7 +280,8 @@ async function suggestNames(filePath, onProgress, { required = false } = {}) {
 // 정리가 끝난 기록의 마무리: 요약 → Obsidian 연결 → 팀 공유 폴더 사본(요약·연결이 들어간 최신본). 경고 글을 모아 돌려준다.
 async function completeRecord(filePath, onProgress, options) {
   const settings = loadSettings();
-  const warnings = [await summarizeFile(filePath, onProgress, options)];
+  const warnings = [await translateFile(filePath, settings, onProgress)];
+  warnings.push(await summarizeFile(filePath, onProgress, options));
   await suggestNames(filePath, onProgress, options);
   try {
     linkRecord(filePath, { frontmatter: settings.frontmatter });

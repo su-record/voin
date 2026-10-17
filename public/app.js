@@ -123,7 +123,7 @@ function showNotice(text) {
 }
 
 // 받아쓴 한 줄을 붙인다. 바로 앞 덩어리와 화자가 같으면 그 덩어리에 문단만 더한다.
-function addLine(container, time, label, text) {
+function addLine(container, time, label, text, translation) {
   container.querySelector(".placeholder")?.remove();
   const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
   let turn = container.lastElementChild;
@@ -147,6 +147,7 @@ function addLine(container, time, label, text) {
   body.textContent = text;
   body.dataset.time = time;
   turn.append(body);
+  if (translation) turn.append(el("p", "translation", `↳ ${translation}`));
   if (atBottom) container.scrollTop = container.scrollHeight;
 }
 
@@ -990,6 +991,7 @@ function parseMeeting(text) {
     else {
       const m = line.match(/^\[(\d{2}:\d{2}:\d{2})\] \*\*(.+?)\*\*: (.*)$/);
       if (m) result.lines.push({ time: m[1], label: m[2], text: m[3] });
+      else if (line.startsWith("↳ ") && result.lines.length) result.lines.at(-1).translation = line.slice(2);
       else result.meta.push(line.replace(/^- /, ""));
     }
   }
@@ -1019,7 +1021,7 @@ async function openMeeting(file) {
   const body = $("fileBody");
   body.replaceChildren();
   if (meeting.summary.length) body.append(summaryCard(meeting.summary), el("h2", "transcript-heading", "기록"));
-  for (const l of meeting.lines) addLine(body, l.time, l.label, l.text);
+  for (const l of meeting.lines) addLine(body, l.time, l.label, l.text, l.translation);
   if (!meeting.lines.length) body.append(el("p", "placeholder-text", "받아쓴 내용이 없습니다."));
   if (meeting.audio.length) {
     const note = document.createElement("p");
