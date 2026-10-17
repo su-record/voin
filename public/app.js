@@ -1,4 +1,11 @@
+import { getLang, pickLang, setLang, t, translateDom } from "/shared/i18n.mjs";
 import { dictionaryToText, parseDictionaryText } from "/shared/text-cleanup.mjs";
+
+// 화면 언어: 시스템 언어(한·영·일, 아니면 영어). 고정된 화면 글은 여기서 한 번 바꾸고, 코드에서 만드는 글은 t()로
+setLang(pickLang(navigator.languages));
+document.documentElement.lang = getLang();
+translateDom(document.body);
+const LOCALE = { ko: "ko-KR", en: "en-US", ja: "ja-JP" }[getLang()] ?? "en-US";
 const $ = (id) => document.getElementById(id);
 const SOURCE_HUES = { 마이크: 215, 화상회의: 150, 녹음: 215 };
 
@@ -70,7 +77,7 @@ async function api(path, options = {}) {
     headers: options.body && typeof options.body === "string" ? { "content-type": "application/json" } : undefined,
   });
   const data = response.headers.get("content-type")?.includes("json") ? await response.json() : null;
-  if (!response.ok) throw new Error(data?.error ?? `요청 실패 (${response.status})`);
+  if (!response.ok) throw new Error(data?.error ?? t("요청 실패 ({status})", { status: response.status }));
   return data;
 }
 
@@ -159,8 +166,8 @@ function connect() {
   ws.onopen = () => setIdleButton();
   ws.onclose = () => {
     if (recording) stopAudio();
-    setButton("서버 연결 끊김", true);
-    showNotice("서버와 연결이 끊겼습니다. 앱을 다시 실행하세요.");
+    setButton(t("서버 연결 끊김"), true);
+    showNotice(t("서버와 연결이 끊겼습니다. 앱을 다시 실행하세요."));
   };
   ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
 }
@@ -237,11 +244,11 @@ function handleMessage(m) {
     case "summary-error":
       summarizingFiles.delete(m.file);
       setProcessing(null);
-      setJobStatus(m.type === "summary-error" ? m.message : (m.message ?? "요약을 붙였습니다."));
+      setJobStatus(m.type === "summary-error" ? m.message : (m.message ?? t("요약을 붙였습니다.")));
       if (openFile === m.file && !$("fileView").hidden) openMeeting(m.file);
       break;
     case "login-done":
-      if (m.error) setJobStatus(`로그인 실패: ${m.error}`);
+      if (m.error) setJobStatus(t("로그인 실패: {error}", { error: m.error }));
       if (!$("settingsView").hidden) loadProviders(true);
       break;
     case "agent-start":
@@ -262,7 +269,7 @@ function handleMessage(m) {
       break;
     case "import-error":
       setProcessing(null);
-      setJobStatus(`불러오기 실패: ${m.message}`);
+      setJobStatus(t("불러오기 실패: {message}", { message: m.message }));
       break;
   }
 }
@@ -271,13 +278,15 @@ function handleMessage(m) {
 
 function renderModelBar() {
   const mb = (bytes) => Math.round(bytes / 1e6);
-  const name = model.name ?? "받아쓰기 모델";
+  const name = model.name ?? t("받아쓰기 모델");
   const texts = {
-    loading: `${name} 불러오는 중…`,
+    loading: t("{name} 불러오는 중…", { name }),
     missing: model.paused
-      ? `${name} 내려받기를 멈췄습니다. 받은 곳부터 이어 받을 수 있습니다.`
-      : `받아쓰기 모델(${name})이 없습니다. 처음 한 번 내려받아야 합니다 (${model.sizeMB}MB).`,
-    downloading: model.verifying ? "받은 파일을 확인하는 중…" : `${name} 내려받는 중… ${mb(model.received ?? 0)} / ${mb(model.total ?? 0)}MB`,
+      ? t("{name} 내려받기를 멈췄습니다. 받은 곳부터 이어 받을 수 있습니다.", { name })
+      : t("받아쓰기 모델({name})이 없습니다. 처음 한 번 내려받아야 합니다 ({size}MB).", { name, size: model.sizeMB }),
+    downloading: model.verifying
+      ? t("받은 파일을 확인하는 중…")
+      : t("{name} 내려받는 중… {received} / {total}MB", { name, received: mb(model.received ?? 0), total: mb(model.total ?? 0) }),
     error: model.message,
   };
   // 모델이 없을 때는 띄우지 않는다: 막대 가운데 안내(누르면 모델 설정)와 처음 실행 때 열리는 모델 목록에서
@@ -290,7 +299,11 @@ function renderModelBar() {
     if (model.verifying) $("modelProgress").removeAttribute("value");
     else $("modelProgress").value = (model.received ?? 0) / (model.total || 1);
   }
-  const action = { missing: model.paused ? "이어 받기" : "내려받기", downloading: model.verifying ? null : "취소", error: model.canDownload ? "다시 시도" : null }[model.state];
+  const action = {
+    missing: model.paused ? t("이어 받기") : t("내려받기"),
+    downloading: model.verifying ? null : t("취소"),
+    error: model.canDownload ? t("다시 시도") : null,
+  }[model.state];
   $("modelAction").hidden = !action;
   $("modelAction").textContent = action ?? "";
 
@@ -298,7 +311,13 @@ function renderModelBar() {
   const percent = model.total ? Math.round(((model.received ?? 0) / model.total) * 100) : 0;
   $("modelChip").dataset.state = model.state;
   $("modelChipText").textContent =
-    { ready: name, loading: `${name} 불러오는 중`, missing: `${name} 없음`, downloading: `${name} 받는 중 ${percent}%`, error: `${name} 문제 있음` }[model.state] ?? name;
+    {
+      ready: name,
+      loading: t("{name} 불러오는 중", { name }),
+      missing: t("{name} 없음", { name }),
+      downloading: t("{name} 받는 중 {percent}%", { name, percent }),
+      error: t("{name} 문제 있음", { name }),
+    }[model.state] ?? name;
   reportState();
 }
 
@@ -317,14 +336,16 @@ $("modelChip").onclick = () => openSettings("set-models");
 // ───────── 받아쓰기 모델 목록 (설정) ─────────
 
 const modelErrors = {};
-const SOURCE_TEXT = { bundled: "앱에 포함", downloaded: "내려받음", handy: "Handy 앱의 모델 사용" };
+const SOURCE_TEXT = { bundled: () => t("앱에 포함"), downloaded: () => t("내려받음"), handy: () => t("Handy 앱의 모델 사용") };
 
 function fmtSize(bytes) {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)}GB` : `${Math.round(bytes / 1e6)}MB`;
 }
 function fmtHourTime(rtf) {
   const sec = Math.round(rtf * 3600);
-  return sec < 60 ? `약 ${sec}초` : `약 ${Math.floor(sec / 60)}분${sec % 60 >= 30 ? " 30초" : ""}`;
+  if (sec < 60) return t("약 {n}초", { n: sec });
+  const min = Math.floor(sec / 60);
+  return sec % 60 >= 30 ? t("약 {n}분 30초", { n: min }) : t("약 {n}분", { n: min });
 }
 
 async function loadModelList() {
@@ -339,11 +360,11 @@ async function loadModelList() {
 }
 
 function asrModelCard(m) {
-  const tags = [m.streaming ? ["blue", "실시간 스트리밍 지원"] : ["", "스트리밍 미지원 (문장 단위)"]];
-  if (m.installed) tags.push(["", SOURCE_TEXT[m.source] ?? "설치됨"]);
-  if (m.size > 1.2e9) tags.push(["warn", "메모리 16GB 이상 권장"]);
+  const tags = [m.streaming ? ["blue", t("실시간 스트리밍 지원")] : ["", t("스트리밍 미지원 (문장 단위)")]];
+  if (m.installed) tags.push(["", SOURCE_TEXT[m.source]?.() ?? t("설치됨")]);
+  if (m.size > 1.2e9) tags.push(["warn", t("메모리 16GB 이상 권장")]);
   return modelCard(m, {
-    sub: `${m.family} · ${fmtSize(m.size)} · ${m.languages} · 1시간 녹음 처리 ${fmtHourTime(m.rtf)}`,
+    sub: `${m.family} · ${fmtSize(m.size)} · ${m.languages} · ${t("1시간 녹음 처리 {time}", { time: fmtHourTime(m.rtf) })}`,
     tags,
     post: (action) => api(`/api/models/${m.id}/${action}`, { method: "POST" }),
     reload: loadModelList,
@@ -365,10 +386,10 @@ async function loadSummaryModelList() {
 
 function summaryModelCard(m, memoryGB) {
   const tags = [["", m.license]];
-  if (m.recommended) tags.unshift(["good", `이 맥(${memoryGB}GB)에 추천`]);
-  if (!m.fits) tags.push(["warn", `메모리 ${m.minMemoryGB}GB 이상 필요`]);
+  if (m.recommended) tags.unshift(["good", t("이 맥({gb}GB)에 추천", { gb: memoryGB })]);
+  if (!m.fits) tags.push(["warn", t("메모리 {gb}GB 이상 필요", { gb: m.minMemoryGB })]);
   return modelCard(m, {
-    sub: `${m.family} · ${fmtSize(m.size)} · 무료 · 기록이 이 맥 밖으로 나가지 않음`,
+    sub: `${m.family} · ${fmtSize(m.size)} · ${t("무료 · 기록이 이 맥 밖으로 나가지 않음")}`,
     tags,
     post: (action) => api(`/api/summary/local-models/${m.id}/${action}`, { method: "POST" }),
     reload: loadSummaryModelList,
@@ -391,7 +412,7 @@ function modelCard(m, { sub, tags, post, reload, canDelete }) {
   const info = el("div");
   info.append(el("div", "model-name", m.name), el("div", "model-sub", sub));
   const badges = el("div", "model-badges");
-  if (inUse) badges.append(el("span", "tag blue", "사용 중"));
+  if (inUse) badges.append(el("span", "tag blue", t("사용 중")));
   if (m.badge) badges.append(el("span", "tag good", m.badge));
   for (const [cls, text] of tags) badges.append(el("span", `tag${cls ? ` ${cls}` : ""}`, text));
   info.append(badges);
@@ -412,11 +433,11 @@ function modelCard(m, { sub, tags, post, reload, canDelete }) {
     };
     return b;
   };
-  if (m.downloading) actions.append(button("취소", () => post("cancel")));
-  else if (!m.installed) actions.append(button(m.partial ? "이어 받기" : "내려받기", () => post("download"), "primary"));
+  if (m.downloading) actions.append(button(t("취소"), () => post("cancel")));
+  else if (!m.installed) actions.append(button(m.partial ? t("이어 받기") : t("내려받기"), () => post("download"), "primary"));
   else if (!m.active) {
-    actions.append(button("사용하기", () => post("use"), "primary"));
-    if (canDelete) actions.append(button("삭제", () => post("delete")));
+    actions.append(button(t("사용하기"), () => post("use"), "primary"));
+    if (canDelete) actions.append(button(t("삭제"), () => post("delete")));
   }
   top.append(info, actions);
   card.append(top);
@@ -426,13 +447,13 @@ function modelCard(m, { sub, tags, post, reload, canDelete }) {
     const bar = el("progress");
     bar.max = 1;
     if (!m.downloading.verifying) bar.value = m.downloading.received / m.downloading.total;
-    p.append(bar, el("span", null, m.downloading.verifying ? "확인 중…" : `${Math.round(m.downloading.received / 1e6)} / ${Math.round(m.downloading.total / 1e6)}MB`));
+    p.append(bar, el("span", null, m.downloading.verifying ? t("확인 중…") : `${Math.round(m.downloading.received / 1e6)} / ${Math.round(m.downloading.total / 1e6)}MB`));
     card.append(p);
   }
   if (modelErrors[m.id]) card.append(el("p", "model-error", modelErrors[m.id]));
 
   const pc = el("div", "model-proscons");
-  for (const [title, items] of [["장점", m.pros], ["단점", m.cons]]) {
+  for (const [title, items] of [[t("장점"), m.pros], [t("단점"), m.cons]]) {
     const col = el("div");
     const ul = el("ul");
     ul.append(...items.map((t) => el("li", null, t)));
@@ -558,7 +579,7 @@ function closeMic(mic) {
 // 녹음 중이 아닐 때의 버튼: 모델이 준비되어야 누를 수 있다
 function setIdleButton() {
   const ready = model.state === "ready";
-  setButton(ready ? "녹음" : "모델 준비 중", !ready || ws?.readyState !== WebSocket.OPEN);
+  setButton(ready ? t("녹음") : t("모델 준비 중"), !ready || ws?.readyState !== WebSocket.OPEN);
   $("workButton").disabled = !ready;
   $("importButton").disabled = !ready || recording;
 }
@@ -572,7 +593,7 @@ function setButton(label, disabled) {
 
 async function startRecording() {
   showNotice(null);
-  setButton("시작하는 중…", true);
+  setButton(t("시작하는 중…"), true);
   try {
     if (dictating) stopDictation({ cancel: true });
     audio = await openMic();
@@ -580,7 +601,9 @@ async function startRecording() {
     refreshMicList();
   } catch (error) {
     setIdleButton();
-    showNotice(`마이크를 사용할 수 없습니다: ${error.message}. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 권한을 확인하세요.`);
+    showNotice(
+      t("마이크를 사용할 수 없습니다: {message}. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 권한을 확인하세요.", { message: error.message }),
+    );
     return;
   }
 
@@ -592,12 +615,12 @@ async function startRecording() {
   $("timer").hidden = false;
   $("workButton").disabled = true;
   lastActivity = "record";
-  if (!$("title").value.trim() && context?.app) $("title").value = `${context.app.name} 회의`;
+  if (!$("title").value.trim() && context?.app) $("title").value = t("{app} 회의", { app: context.app.name });
   $("toggle").classList.add("recording");
   renderBar();
   $("recordView").classList.add("recording-on");
   const startedAt = (recordingStartedAt = Date.now());
-  setButton("녹음 중 · 누르면 끝", false);
+  setButton(t("녹음 중 · 누르면 끝"), false);
   timerHandle = setInterval(() => {
     const s = Math.floor((Date.now() - startedAt) / 1000);
     $("timer").textContent = [s / 3600, (s % 3600) / 60, s % 60].map((n) => String(Math.floor(n)).padStart(2, "0")).join(":");
@@ -624,9 +647,9 @@ function stopAudio() {
 function stopRecording() {
   stopAudio();
   // 서버가 남은 말을 받아쓰고, 화자 분석 후 저장한 뒤 "stopped"를 보낸다
-  setButton("저장하는 중…", true);
-  setJobStatus("저장하는 중…");
-  setProcessing("저장하는 중…");
+  setButton(t("저장하는 중…"), true);
+  setJobStatus(t("저장하는 중…"));
+  setProcessing(t("저장하는 중…"));
   ws.send(JSON.stringify({ type: "stop" }));
 }
 
@@ -640,7 +663,7 @@ async function refreshMicList() {
   const select = $("micSelect");
   const selected = select.value;
   const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
-  select.replaceChildren(new Option("기본 마이크", ""));
+  select.replaceChildren(new Option(t("기본 마이크"), ""));
   for (const d of devices) {
     if (d.deviceId === "default" || !d.label) continue;
     select.append(new Option(d.label, d.deviceId));
@@ -653,14 +676,14 @@ async function refreshMicList() {
 async function importFile(file) {
   if (recording) return;
   if (model.state !== "ready") {
-    setJobStatus("받아쓰기 모델이 준비된 뒤에 불러올 수 있습니다.");
+    setJobStatus(t("받아쓰기 모델이 준비된 뒤에 불러올 수 있습니다."));
     return;
   }
-  setJobStatus(`'${file.name}' 올리는 중…`);
+  setJobStatus(t("'{name}' 올리는 중…", { name: file.name }));
   try {
     await api(`/api/import?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
   } catch (error) {
-    setJobStatus(`불러오기 실패: ${error.message}`);
+    setJobStatus(t("불러오기 실패: {message}", { message: error.message }));
   }
 }
 
@@ -700,15 +723,15 @@ async function loadMeetingList() {
 }
 
 function dayLabel(date) {
-  if (!date) return "날짜 없음";
+  if (!date) return t("날짜 없음");
   const day = new Date(`${date}T00:00:00`);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const diff = Math.round((today - day) / 86400000);
-  if (diff === 0) return "오늘";
-  if (diff === 1) return "어제";
-  const weekday = "일월화수목금토"[day.getDay()];
-  return `${day.getFullYear() === today.getFullYear() ? "" : `${day.getFullYear()}년 `}${day.getMonth() + 1}월 ${day.getDate()}일 (${weekday})`;
+  if (diff === 0) return t("오늘");
+  if (diff === 1) return t("어제");
+  const year = day.getFullYear() === today.getFullYear() ? undefined : "numeric";
+  return day.toLocaleDateString(LOCALE, { year, month: "long", day: "numeric", weekday: "short" });
 }
 
 function renderMeetingList() {
@@ -717,7 +740,7 @@ function renderMeetingList() {
   const list = $("meetingList");
   list.replaceChildren();
   $("emptyList").hidden = meetingItems.length > 0 || !$("saveError").hidden;
-  if (query && !items.length) list.append(el("p", "empty-list", `'${query}'와 맞는 기록이 없습니다.`));
+  if (query && !items.length) list.append(el("p", "empty-list", t("'{query}'와 맞는 기록이 없습니다.", { query })));
   let group = null;
   for (const m of items) {
     const label = dayLabel(m.date);
@@ -732,7 +755,7 @@ function renderMeetingList() {
     button.dataset.file = m.file;
     button.disabled = recording;
     button.classList.toggle("active", m.file === openFile && !$("fileView").hidden);
-    const meta = [m.start, m.duration, m.speakers ? `${m.speakers}명` : null].filter(Boolean).join(" · ");
+    const meta = [m.start, m.duration, m.speakers ? t("{n}명", { n: m.speakers }) : null].filter(Boolean).join(" · ");
     button.append(el("span", "item-title", m.title), el("span", "item-meta", meta || " "));
     button.onclick = () => {
       openMeeting(m.file);
@@ -751,7 +774,7 @@ function withLinks(tag, className, text) {
   for (const m of text.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)) {
     node.append(text.slice(last, m.index));
     const link = el("span", "wikilink", m[2] ?? m[1]);
-    link.title = `Obsidian 노트: ${m[1]}`;
+    link.title = t("Obsidian 노트: {name}", { name: m[1] });
     node.append(link);
     last = m.index + m[0].length;
   }
@@ -761,7 +784,7 @@ function withLinks(tag, className, text) {
 
 function summaryCard(lines) {
   const card = el("section", "summary-card");
-  card.setAttribute("aria-label", "요약");
+  card.setAttribute("aria-label", t("요약"));
   let list = null;
   for (const line of lines) {
     if (line.startsWith("- ")) {
@@ -793,7 +816,7 @@ let playingButton = null;
 function stopVoice() {
   voicePlayer.pause();
   voicePlayer.onended = null;
-  if (playingButton) playingButton.textContent = "▶ 목소리";
+  if (playingButton) playingButton.textContent = t("▶ 목소리");
   playingButton = null;
 }
 
@@ -803,7 +826,7 @@ function playVoices(button, urls) {
   stopVoice();
   if (wasPlaying) return;
   playingButton = button;
-  button.textContent = "■ 멈춤";
+  button.textContent = t("■ 멈춤");
   let i = 0;
   const next = () => {
     if (i >= urls.length) return stopVoice();
@@ -845,7 +868,7 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
   $("speakerPanel").hidden = stats.length === 0;
   const open = speakerPanelOpen ?? unnamed > 0;
   $("speakerInputs").hidden = !open;
-  $("speakerToggle").textContent = open ? "접기" : "이름 바꾸기";
+  $("speakerToggle").textContent = open ? t("접기") : t("이름 바꾸기");
   $("speakerToggle").onclick = () => {
     speakerPanelOpen = !open;
     renderSpeakerCards(file, lines, voices, suggestions);
@@ -867,8 +890,8 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
   $("speakerHint").textContent = !open
     ? stats.map((s) => s.label).join(", ")
     : unnamed
-      ? `${unnamed}명에게 이름이 없습니다. ▶로 목소리를 듣거나 대표 발언을 보고 이름을 넣으세요.`
-      : "이름을 고치면 기록·요약·참석자 링크가 함께 바뀝니다.";
+      ? t("{n}명에게 이름이 없습니다. ▶로 목소리를 듣거나 대표 발언을 보고 이름을 넣으세요.", { n: unnamed })
+      : t("이름을 고치면 기록·요약·참석자 링크가 함께 바뀝니다.");
 
   $("speakerInputs").replaceChildren(
     ...stats.map((s) => {
@@ -879,11 +902,11 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
       const input = el("input");
       input.type = "text";
       input.value = s.label;
-      input.placeholder = "이름";
-      input.setAttribute("aria-label", `${s.label} 이름`);
+      input.placeholder = t("이름");
+      input.setAttribute("aria-label", t("{label} 이름", { label: s.label }));
       if (UNNAMED_SPEAKER.test(s.label)) {
         input.value = "";
-        input.placeholder = `${s.label} → 이름 입력`;
+        input.placeholder = t("{label} → 이름 입력", { label: s.label });
       }
       const commit = async () => {
         const to = input.value.trim();
@@ -902,14 +925,14 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
       head.append(el("span", "sc-dot"), input);
       const urls = voices[s.label] ?? [];
       if (urls.length) {
-        const play = el("button", "sc-play", "▶ 목소리");
+        const play = el("button", "sc-play", t("▶ 목소리"));
         play.type = "button";
-        play.title = `${s.label}의 목소리 ${urls.length}개 듣기`;
+        play.title = t("{label}의 목소리 {n}개 듣기", { label: s.label, n: urls.length });
         play.onclick = () => playVoices(play, urls);
         head.append(play);
       }
       const share = Math.round((s.seconds / total) * 100);
-      const minutes = s.seconds >= 60 ? `약 ${Math.round(s.seconds / 60)}분` : `약 ${Math.round(s.seconds)}초`;
+      const minutes = s.seconds >= 60 ? t("약 {n}분", { n: Math.round(s.seconds / 60) }) : t("약 {n}초", { n: Math.round(s.seconds) });
       const bar = el("div", "sc-bar");
       const fill = el("span");
       fill.style.width = `${share}%`;
@@ -919,7 +942,7 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
         const li = el("li");
         const b = el("button");
         b.type = "button";
-        b.title = "기록에서 이 발언 위치로 이동";
+        b.title = t("기록에서 이 발언 위치로 이동");
         const clip = (t) => (t.length > 60 ? `${t.slice(0, 60)}…` : t);
         const said = el("span", null, `“${clip(l.text)}”`);
         // 외국어 발언은 번역도 함께 (정리할 때 붙인 "↳ 번역" 줄)
@@ -935,15 +958,15 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
       if (hint && UNNAMED_SPEAKER.test(s.label)) {
         const chip = el("button", "sc-suggest");
         chip.type = "button";
-        chip.append(el("span", "sc-suggest-name", `추천: ${hint.name}`), el("span", "sc-suggest-why", hint.reason));
-        chip.title = "누르면 이 이름으로 바꿉니다";
+        chip.append(el("span", "sc-suggest-name", t("추천: {name}", { name: hint.name })), el("span", "sc-suggest-why", hint.reason));
+        chip.title = t("누르면 이 이름으로 바꿉니다");
         chip.onclick = () => {
           input.value = hint.name;
           commit();
         };
         card.append(chip);
       }
-      card.append(el("div", "sc-stats", `${minutes} · ${share}% · ${s.count}번 말함`), bar, quotes);
+      card.append(el("div", "sc-stats", `${minutes} · ${share}% · ${t("{n}번 말함", { n: s.count })}`), bar, quotes);
       return card;
     }),
   );
@@ -1022,19 +1045,19 @@ async function openMeeting(file) {
   $("fileTitle").textContent = meeting.title || file;
   const p = meeting.props;
   const metaParts = p.date
-    ? [`${dayLabel(p.date)} ${p.start ?? ""}${p.end ? `–${p.end}` : ""}`, p.duration, p.participants?.length ? `참석자 ${p.participants.length}명` : null, p.source]
+    ? [`${dayLabel(p.date)} ${p.start ?? ""}${p.end ? `–${p.end}` : ""}`, p.duration, p.participants?.length ? t("참석자 {n}명", { n: p.participants.length }) : null, p.source]
     : meeting.meta;
   $("fileMeta").replaceChildren(...metaParts.filter(Boolean).map((t) => el("span", null, t)));
 
   const body = $("fileBody");
   body.replaceChildren();
-  if (meeting.summary.length) body.append(summaryCard(meeting.summary), el("h2", "transcript-heading", "기록"));
+  if (meeting.summary.length) body.append(summaryCard(meeting.summary), el("h2", "transcript-heading", t("기록")));
   for (const l of meeting.lines) addLine(body, l.time, l.label, l.text, l.translation);
-  if (!meeting.lines.length) body.append(el("p", "placeholder-text", "받아쓴 내용이 없습니다."));
+  if (!meeting.lines.length) body.append(el("p", "placeholder-text", t("받아쓴 내용이 없습니다.")));
   if (meeting.audio.length) {
     const note = document.createElement("p");
     note.className = "muted small";
-    note.textContent = `보관된 음성 파일: ${meeting.audio.join(", ")} (Finder에서 보기 → 첨부 폴더)`;
+    note.textContent = t("보관된 음성 파일: {files} (Finder에서 보기 → 첨부 폴더)", { files: meeting.audio.join(", ") });
     body.append(note);
   }
 
@@ -1042,10 +1065,10 @@ async function openMeeting(file) {
 
   $("copyFile").onclick = async () => {
     await navigator.clipboard.writeText(data.content);
-    $("copyFile").querySelector("span").textContent = "복사됨";
-    setTimeout(() => ($("copyFile").querySelector("span").textContent = "복사"), 1500);
+    $("copyFile").querySelector("span").textContent = t("복사됨");
+    setTimeout(() => ($("copyFile").querySelector("span").textContent = t("복사")), 1500);
   };
-  $("summarizeFile").querySelector("span").textContent = meeting.summary.length ? "다시 요약" : "요약 만들기";
+  $("summarizeFile").querySelector("span").textContent = meeting.summary.length ? t("다시 요약") : t("요약 만들기");
   $("summarizeFile").disabled = summarizingFiles.has(file) || !meeting.lines.length;
   $("summarizeFile").onclick = async () => {
     $("summarizeFile").disabled = true;
@@ -1079,14 +1102,14 @@ function fillSettingsForm({ settings: s, vaults, diarizationReady, appVersion, s
   $("dictionaryText").value = dictionaryToText(s.dictionary);
   const vaultSelect = $("vaultSelect");
   vaultSelect.replaceChildren(
-    ...vaults.map((v) => Object.assign(new Option(`${v.name}${v.open ? " · 지금 열려 있음" : ""}`, v.path), { title: v.path })),
+    ...vaults.map((v) => Object.assign(new Option(`${v.name}${v.open ? t(" · 지금 열려 있음") : ""}`, v.path), { title: v.path })),
   );
   if (s.obsidianVault && !vaults.some((v) => v.path === s.obsidianVault)) {
-    vaultSelect.append(new Option(`${s.obsidianVault} (찾을 수 없음)`, s.obsidianVault));
+    vaultSelect.append(new Option(t("{vault} (찾을 수 없음)", { vault: s.obsidianVault }), s.obsidianVault));
   }
   $("speakerCount").replaceChildren(
-    new Option("자동 (권장)", "0"),
-    ...Array.from({ length: 19 }, (_, i) => new Option(`${i + 2}명`, String(i + 2))),
+    new Option(t("자동 (권장)"), "0"),
+    ...Array.from({ length: 19 }, (_, i) => new Option(t("{n}명", { n: i + 2 }), String(i + 2))),
   );
   for (const el of form.elements) {
     if (!el.name || !(el.name in s)) continue;
@@ -1105,7 +1128,7 @@ function updateSettingsUi() {
   $("noVaults").hidden = mode !== "obsidian" || vaultCount > 0;
   form.querySelectorAll("[data-mac-only]").forEach((el) => (el.hidden = !isMacApp));
   $("browserNote").hidden = isMacApp;
-  $("silenceValue").textContent = `${(form.elements.silenceMs.value / 1000).toFixed(1)}초`;
+  $("silenceValue").textContent = t("{n}초", { n: (form.elements.silenceMs.value / 1000).toFixed(1) });
   form.elements.expectedSpeakers.disabled = !form.elements.diarization.checked;
   form.querySelectorAll(".pick").forEach((b) => (b.hidden = !isMacApp));
 }
@@ -1119,7 +1142,7 @@ async function saveSettingsForm() {
   }
   try {
     ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify(data) }));
-    $("savedBadge").textContent = "저장됨";
+    $("savedBadge").textContent = t("저장됨");
     $("savedBadge").hidden = false;
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => ($("savedBadge").hidden = true), 1500);
@@ -1129,7 +1152,7 @@ async function saveSettingsForm() {
     api("/api/settings").then((d) => ($("saveDirText").textContent = d.saveDir ?? ""));
     loadMeetingList();
   } catch (error) {
-    $("savedBadge").textContent = `저장 실패: ${error.message}`;
+    $("savedBadge").textContent = t("저장 실패: {message}", { message: error.message });
     $("savedBadge").hidden = false;
   }
 }
@@ -1155,13 +1178,13 @@ window.folderPicked = (target, path) => {
 // 요약 방법 목록: 명령줄 도구·Ollama·API 키별로 상태와 설정을 그린다
 async function renderAgentToolHint(providers) {
   const find = (id) => providers.find((p) => p.id === id);
-  const line = (id, name) => `${name}: ${find(id)?.ready ? "준비됨" : find(id)?.installed ? "로그인 필요" : "설치 안 됨"}`;
+  const line = (id, name) => `${name}: ${find(id)?.ready ? t("준비됨") : find(id)?.installed ? t("로그인 필요") : t("설치 안 됨")}`;
   $("agentToolHint").textContent = `${line("codex", "Codex")} · ${line("claude", "Claude Code")}`;
 }
 
 async function loadProviders(refresh = false) {
   const groups = { cli: $("providerCli"), login: $("providerLogin"), local: $("providerLocal"), api: $("providerApi") };
-  if (refresh) Object.values(groups).forEach((g) => g.replaceChildren(el("div", "provider-row", "확인하는 중…")));
+  if (refresh) Object.values(groups).forEach((g) => g.replaceChildren(el("div", "provider-row", t("확인하는 중…"))));
   let providers;
   try {
     ({ providers } = await api(`/api/summary/providers${refresh ? "?refresh" : ""}`));
@@ -1172,9 +1195,9 @@ async function loadProviders(refresh = false) {
   // 요약 방법 고르기
   const select = $("summaryProviderSelect");
   select.replaceChildren(
-    new Option("자동", "auto"),
-    ...providers.map((p) => new Option(`${p.name}${p.ready ? "" : " (준비 안 됨)"}`, p.id)),
-    new Option("끄기 (요약하지 않음)", "off"),
+    new Option(t("자동"), "auto"),
+    ...providers.map((p) => new Option(`${p.name}${p.ready ? "" : t(" (준비 안 됨)")}`, p.id)),
+    new Option(t("끄기 (요약하지 않음)"), "off"),
   );
   select.value = settings.summaryProvider;
   Object.values(groups).forEach((g) => g.replaceChildren());
@@ -1202,17 +1225,17 @@ function providerRow(p) {
   // 모델 고르기 (API·Ollama)
   const modelSelect = () => {
     const sel = el("select");
-    sel.setAttribute("aria-label", `${p.name} 모델`);
+    sel.setAttribute("aria-label", t("{name} 모델", { name: p.name }));
     const current = settings.summaryModels?.[p.id] ?? "";
-    const auto = p.choice?.auto && p.choice.model ? `자동 (지금: ${p.choice.model})` : "자동으로 고름";
-    sel.append(new Option(p.id === "claude" ? "Claude Code 기본" : auto, ""));
+    const auto = p.choice?.auto && p.choice.model ? t("자동 (지금: {model})", { model: p.choice.model }) : t("자동으로 고름");
+    sel.append(new Option(p.id === "claude" ? t("Claude Code 기본") : auto, ""));
     // 받아 둔 목록 기준: 고른 모델보다 새 모델이 있거나, 고른 모델이 없어졌으면 알린다
-    if (p.choice?.newer) fail(`새 모델이 있습니다: ${p.choice.newer} (자동으로 두면 새 모델을 씁니다)`);
-    if (p.choice?.retired) fail(`고른 모델(${p.choice.retired})을 더 쓸 수 없어 ${p.choice.model}로 대신 요약합니다.`);
+    if (p.choice?.newer) fail(t("새 모델이 있습니다: {model} (자동으로 두면 새 모델을 씁니다)", { model: p.choice.newer }));
+    if (p.choice?.retired) fail(t("고른 모델({retired})을 더 쓸 수 없어 {model}로 대신 요약합니다.", { retired: p.choice.retired, model: p.choice.model }));
     if (current) sel.append(new Option(current, current));
     sel.value = current;
     sel.onchange = () => saveSummaryModel(p.id, sel.value);
-    const load = el("button", null, "모델 불러오기");
+    const load = el("button", null, t("모델 불러오기"));
     load.type = "button";
     load.onclick = async () => {
       load.disabled = true;
@@ -1239,18 +1262,18 @@ function providerRow(p) {
       url.name = "summaryCustomUrl";
       url.placeholder = "http://localhost:1234/v1";
       url.value = settings.summaryCustomUrl ?? "";
-      url.setAttribute("aria-label", "OpenAI 호환 서버 주소");
+      url.setAttribute("aria-label", t("OpenAI 호환 서버 주소"));
       controls.append(url);
     }
     const key = el("input");
     key.type = "password";
-    key.placeholder = p.hasKey ? "등록됨 — 바꾸려면 새 키 입력" : p.id === "custom" ? "API 키 (필요할 때만)" : "API 키";
+    key.placeholder = p.hasKey ? t("등록됨 — 바꾸려면 새 키 입력") : p.id === "custom" ? t("API 키 (필요할 때만)") : t("API 키");
     key.autocomplete = "off";
-    key.setAttribute("aria-label", `${p.name} 키`);
-    const save = el("button", "primary", "저장");
+    key.setAttribute("aria-label", t("{name} 키", { name: p.name }));
+    const save = el("button", "primary", t("저장"));
     save.type = "button";
     save.onclick = async () => {
-      if (!key.value.trim()) return fail("키를 입력하세요.");
+      if (!key.value.trim()) return fail(t("키를 입력하세요."));
       save.disabled = true;
       try {
         await api("/api/summary/key", { method: "POST", body: JSON.stringify({ id: p.id, key: key.value }) });
@@ -1262,7 +1285,7 @@ function providerRow(p) {
     };
     controls.append(key, save);
     if (p.hasKey) {
-      const remove = el("button", null, "키 삭제");
+      const remove = el("button", null, t("키 삭제"));
       remove.type = "button";
       remove.onclick = async () => {
         await api("/api/summary/key", { method: "POST", body: JSON.stringify({ id: p.id, key: "" }) });
@@ -1272,14 +1295,14 @@ function providerRow(p) {
     }
     if (p.hasKey || p.id === "custom") controls.append(...modelSelect());
     if (p.keyUrl) {
-      const link = el("a", null, "키 만들기");
+      const link = el("a", null, t("키 만들기"));
       link.href = p.keyUrl;
       link.target = "_blank";
       controls.append(link);
     }
   } else if (p.kind === "login") {
     if (p.loggedIn) {
-      const out = el("button", null, "로그아웃");
+      const out = el("button", null, t("로그아웃"));
       out.type = "button";
       out.onclick = async () => {
         await api(`/api/summary/login/${p.id}/logout`, { method: "POST" });
@@ -1287,7 +1310,7 @@ function providerRow(p) {
       };
       controls.append(out, ...modelSelect());
     } else {
-      const start = el("button", "primary", "로그인");
+      const start = el("button", "primary", t("로그인"));
       start.type = "button";
       const box = el("div", "login-box");
       box.hidden = true;
@@ -1296,16 +1319,16 @@ function providerRow(p) {
         error.hidden = true;
         try {
           const login = await api(`/api/summary/login/${p.id}/start`, { method: "POST" });
-          const reopen = el("a", null, "주소 다시 열기");
+          const reopen = el("a", null, t("주소 다시 열기"));
           reopen.href = login.url;
           reopen.target = "_blank";
-          const cancel = el("button", null, "취소");
+          const cancel = el("button", null, t("취소"));
           cancel.type = "button";
           cancel.onclick = async () => {
             await api(`/api/summary/login/${p.id}/cancel`, { method: "POST" });
             loadProviders(true);
           };
-          box.replaceChildren(el("span", null, "브라우저에서 이 코드를 입력하고 승인하세요:"), el("code", "login-code", login.userCode), reopen, cancel);
+          box.replaceChildren(el("span", null, t("브라우저에서 이 코드를 입력하고 승인하세요:")), el("code", "login-code", login.userCode), reopen, cancel);
           box.hidden = false;
         } catch (e) {
           fail(e.message);
@@ -1318,7 +1341,7 @@ function providerRow(p) {
   } else if (p.kind === "local") {
     if (p.installed) controls.append(...modelSelect());
     else {
-      const link = el("a", null, "Ollama 내려받기");
+      const link = el("a", null, t("Ollama 내려받기"));
       link.href = p.keyUrl;
       link.target = "_blank";
       controls.append(link);
@@ -1390,7 +1413,7 @@ const MOD_SYMBOLS = { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" };
 const SUPPORTED_KEY = /^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-2])|Space)$/;
 
 function hotkeyLabel(hotkey) {
-  if (!hotkey) return "사용 안 함";
+  if (!hotkey) return t("사용 안 함");
   const parts = hotkey.split("+");
   const code = parts.pop();
   return parts.map((m) => MOD_SYMBOLS[m]).join("") + code.replace(/^Key|^Digit/, "");
@@ -1405,7 +1428,7 @@ function renderHotkey(hotkey) {
 let listeningHotkey = false;
 $("hotkeyButton").onclick = () => {
   listeningHotkey = true;
-  $("hotkeyButton").textContent = "키 조합을 누르세요…";
+  $("hotkeyButton").textContent = t("키 조합을 누르세요…");
   $("hotkeyButton").classList.add("listening");
   $("hotkeyError").hidden = true;
 };
@@ -1421,9 +1444,9 @@ $("hotkeyButton").addEventListener("keydown", (e) => {
   if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
   const mods = [e.ctrlKey && "ctrl", e.altKey && "alt", e.shiftKey && "shift", e.metaKey && "cmd"].filter(Boolean);
   const error = !SUPPORTED_KEY.test(e.code)
-    ? "영문자, 숫자, F1~F12, Space 키만 쓸 수 있습니다."
+    ? t("영문자, 숫자, F1~F12, Space 키만 쓸 수 있습니다.")
     : !mods.some((m) => m !== "shift")
-      ? "다른 앱과 겹치지 않도록 ⌘·⌥·⌃ 중 하나 이상을 함께 누르세요."
+      ? t("다른 앱과 겹치지 않도록 ⌘·⌥·⌃ 중 하나 이상을 함께 누르세요.")
       : null;
   if (error) {
     $("hotkeyError").textContent = error;
@@ -1450,7 +1473,7 @@ function renderAgentHotkey() {
 }
 $("agentHotkeyButton").onclick = () => {
   listeningAgentKey = true;
-  $("agentHotkeyButton").textContent = "키 조합을 누르세요…";
+  $("agentHotkeyButton").textContent = t("키 조합을 누르세요…");
   $("agentHotkeyButton").classList.add("listening");
 };
 $("agentHotkeyButton").onblur = () => {
@@ -1475,12 +1498,12 @@ $("agentHotkeyButton").addEventListener("keydown", async (e) => {
 // 받아쓰기 단축키 (⌥D): 같은 입력 방식
 let listeningDictationKey = false;
 function renderDictationHotkey() {
-  $("dictationHotkeyButton").textContent = hotkeyLabel(settings?.dictationHotkey) || "없음";
+  $("dictationHotkeyButton").textContent = hotkeyLabel(settings?.dictationHotkey) || t("없음");
   $("dictationHotkeyButton").classList.remove("listening");
 }
 $("dictationHotkeyButton").onclick = () => {
   listeningDictationKey = true;
-  $("dictationHotkeyButton").textContent = "키 조합을 누르세요…";
+  $("dictationHotkeyButton").textContent = t("키 조합을 누르세요…");
   $("dictationHotkeyButton").classList.add("listening");
 };
 $("dictationHotkeyButton").onblur = () => {
@@ -1506,12 +1529,12 @@ $("dictionaryText").addEventListener("change", async (e) => {
   try {
     ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify({ dictionary: parseDictionaryText(e.target.value) }) }));
     e.target.value = dictionaryToText(settings.dictionary);
-    $("savedBadge").textContent = "저장됨";
+    $("savedBadge").textContent = t("저장됨");
     $("savedBadge").hidden = false;
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => ($("savedBadge").hidden = true), 1500);
   } catch (error) {
-    $("savedBadge").textContent = `저장 실패: ${error.message}`;
+    $("savedBadge").textContent = t("저장 실패: {message}", { message: error.message });
     $("savedBadge").hidden = false;
   }
 });
@@ -1545,9 +1568,9 @@ async function refreshContext() {
 // 스피커 경고는 상대방 소리를 함께 받을 때(회의 앱이 켜졌거나 "화상회의 소리 포함")만 의미가 있다: 그때만 경고로 보인다
 function contextBits() {
   const bits = [];
-  if (context?.app) bits.push({ text: context.app.inMeeting ? `${context.app.name} 회의 중` : `${context.app.name} 켜짐`, kind: "brand" });
+  if (context?.app) bits.push({ text: context.app.inMeeting ? t("{app} 회의 중", { app: context.app.name }) : t("{app} 켜짐", { app: context.app.name }), kind: "brand" });
   const echoRisk = context?.app || $("includeSystem").checked;
-  if (context?.output?.speaker && echoRisk) bits.push({ text: "스피커 소리가 다시 녹음될 수 있어요 · 이어폰 권장", kind: "warn" });
+  if (context?.output?.speaker && echoRisk) bits.push({ text: t("스피커 소리가 다시 녹음될 수 있어요 · 이어폰 권장"), kind: "warn" });
   else if (context?.output) bits.push({ text: context.output.name, kind: "", icon: "headphones" });
   if (context?.input) bits.push({ text: context.input.name, kind: "", icon: "mic" });
   return bits;
@@ -1569,7 +1592,7 @@ function chip(b) {
 function renderContextRow() {
   const row = $("contextRow");
   const bits = contextBits();
-  if (recording && Date.now() - systemHeardAt < 2500) bits.unshift({ text: "상대방 소리 들림", kind: "brand live" });
+  if (recording && Date.now() - systemHeardAt < 2500) bits.unshift({ text: t("상대방 소리 들림"), kind: "brand live" });
   row.replaceChildren(...bits.map(chip));
 }
 
@@ -1592,16 +1615,16 @@ function renderBar() {
   text.replaceChildren();
   const dot = (kind) => el("span", `dot ${kind ?? ""}`);
   if (model.state !== "ready") {
-    text.append(dot("warn"), model.state === "downloading" ? "받아쓰기 모델 내려받는 중…" : model.state === "loading" ? "받아쓰기 모델 불러오는 중…" : "받아쓰기 모델이 필요합니다 · ⚙");
+    text.append(dot("warn"), model.state === "downloading" ? t("받아쓰기 모델 내려받는 중…") : model.state === "loading" ? t("받아쓰기 모델 불러오는 중…") : t("받아쓰기 모델이 필요합니다 · ⚙"));
     return;
   }
   if (processing) return text.append(dot("brand"), processing);
-  if (agentBusy) return text.append(dot("brand"), barNote ?? "작업 중…");
+  if (agentBusy) return text.append(dot("brand"), barNote ?? t("작업 중…"));
   if (barNote) return text.append(dot("brand"), barNote);
   // 쉬는 동안 막대에는 회의 앱을 알아챘을 때만 상황을 띄운다 (스피커 경고도 그때만). 장치·경고 전체는 💬 판에서
-  if (!context?.app) return text.append("녹음하거나, 말로 일을 시키세요");
-  const name = context.app.inMeeting ? `${context.app.name} 회의 중` : `${context.app.name} 켜짐`;
-  if (context.output?.speaker) return text.append(dot("warn"), `${name} · 스피커라 이어폰 권장`);
+  if (!context?.app) return text.append(t("녹음하거나, 말로 일을 시키세요"));
+  const name = context.app.inMeeting ? t("{app} 회의 중", { app: context.app.name }) : t("{app} 켜짐", { app: context.app.name });
+  if (context.output?.speaker) return text.append(dot("warn"), t("{name} · 스피커라 이어폰 권장", { name }));
   text.append(dot("brand"), name);
 }
 
@@ -1654,7 +1677,7 @@ function showAgent() {
 }
 
 function renderAgentTarget() {
-  const folder = settings?.agentFolder ? settings.agentFolder.split("/").filter(Boolean).at(-1) : "작업 폴더를 고르세요";
+  const folder = settings?.agentFolder ? settings.agentFolder.split("/").filter(Boolean).at(-1) : t("작업 폴더를 고르세요");
   $("agentTarget").textContent = `${ENGINE_NAMES[settings?.agentEngine] ?? "Codex"} · ${folder}`;
 }
 $("agentTarget").onclick = () => !agentBusy && !dictating && openFolderPicker();
@@ -1671,7 +1694,7 @@ function agentLine(role, text) {
       log.querySelector(".thinking") ? log.insertBefore(steps, log.querySelector(".thinking")) : log.append(steps);
     }
     steps.querySelector("ol").append(el("li", null, text));
-    steps.querySelector("summary").textContent = `작업 단계 ${steps.querySelectorAll("li").length}개`;
+    steps.querySelector("summary").textContent = t("작업 단계 {n}개", { n: steps.querySelectorAll("li").length });
     log.scrollTop = log.scrollHeight;
     return steps;
   }
@@ -1757,7 +1780,7 @@ function setAgentBusy(busy) {
   agentBusy = busy;
   $("agentStop").hidden = !busy;
   // 작업 중에도 보낼 수 있다 (Codex는 하던 작업에 더하고, Claude Code는 끝난 뒤 이어서)
-  $("agentInput").placeholder = busy ? "작업 중에 더할 말" : "입력해서 일 시키기";
+  $("agentInput").placeholder = busy ? t("작업 중에 더할 말") : t("입력해서 일 시키기");
   $("agentNew").disabled = busy;
   $("workButton").classList.toggle("busy", busy);
   showThinking(busy && !agentBubble);
@@ -1772,8 +1795,8 @@ async function loadAgentHistory() {
   const shown = history.filter((h) => h.role !== "approval");
   for (const h of shown) agentLine(h.role, h.text);
   // 앱이 닫히는 등으로 답 없이 끊긴 작업은 그렇다고 알려 준다 (작업 단계만 있고 끝이 비어 보이지 않게)
-  if (!busy && ["activity", "user"].includes(shown.at(-1)?.role)) agentLine("system", "이 작업은 답 없이 끝났습니다 · 다시 말하면 이어서 합니다");
-  if (!history.length) $("agentLog").append(el("p", "agent-empty", "작업 버튼(⌥V)을 누르고 말로 일을 시켜 보세요.\n예: “오늘 회의록에서 할 일만 정리해서 todo.md로 만들어 줘”"));
+  if (!busy && ["activity", "user"].includes(shown.at(-1)?.role)) agentLine("system", t("이 작업은 답 없이 끝났습니다 · 다시 말하면 이어서 합니다"));
+  if (!history.length) $("agentLog").append(el("p", "agent-empty", t("작업 버튼(⌥V)을 누르고 말로 일을 시켜 보세요.\n예: “오늘 회의록에서 할 일만 정리해서 todo.md로 만들어 줘”")));
   setAgentBusy(busy);
 }
 
@@ -1798,7 +1821,7 @@ $("agentStop").onclick = () => api("/api/agent/interrupt", { method: "POST" });
 $("agentNew").onclick = async () => {
   try {
     await api("/api/agent/new", { method: "POST" });
-    agentLine("system", "새 대화를 시작했습니다.");
+    agentLine("system", t("새 대화를 시작했습니다."));
   } catch (error) {
     agentLine("error", error.message);
   }
@@ -1807,16 +1830,16 @@ $("agentNew").onclick = async () => {
 function approvalCard(m) {
   const card = el("div", "approval");
   card.dataset.id = m.id;
-  card.append(el("span", "approval-title", `${m.kind} — 허용할까요?`), el("code", null, m.detail));
+  card.append(el("span", "approval-title", t("{kind} — 허용할까요?", { kind: m.kind })), el("code", null, m.detail));
   const actions = el("div", "approval-actions");
   const answer = async (allow) => {
     actions.querySelectorAll("button").forEach((b) => (b.disabled = true));
     await api(`/api/agent/approval/${m.id}`, { method: "POST", body: JSON.stringify({ allow }) }).catch(() => {});
   };
-  const yes = el("button", "primary", "허용");
+  const yes = el("button", "primary", t("허용"));
   yes.type = "button";
   yes.onclick = () => answer(true);
-  const no = el("button", null, "거절");
+  const no = el("button", null, t("거절"));
   no.type = "button";
   no.onclick = () => answer(false);
   actions.append(yes, no);
@@ -1830,7 +1853,7 @@ async function handleAgentMessage(m) {
   if (m.type === "agent-start") {
     lastActivity = "agent";
     agentAnswer = "";
-    barNote = `작업 중 · ${m.text}`;
+    barNote = t("작업 중 · {text}", { text: m.text });
     if (agentLoaded) agentLine("user", m.text);
     agentBubble = null;
     setAgentBusy(true);
@@ -1845,7 +1868,7 @@ async function handleAgentMessage(m) {
     agentBubble.textContent = agentBubble.dataset.raw;
     $("agentLog").scrollTop = $("agentLog").scrollHeight;
   } else if (m.type === "agent-activity") {
-    if (!agentAnswer) barNote = `작업 중 · ${m.text}`;
+    if (!agentAnswer) barNote = t("작업 중 · {text}", { text: m.text });
     renderBar();
     if (!agentLoaded) return;
     finishBubble();
@@ -1862,14 +1885,14 @@ async function handleAgentMessage(m) {
   } else if (m.type === "agent-approval-done") {
     const card = $("agentLog").querySelector(`.approval[data-id="${m.id}"]`);
     card?.classList.add("done");
-    card?.querySelector(".approval-title")?.replaceChildren(m.allow ? "허용함" : "거절함");
+    card?.querySelector(".approval-title")?.replaceChildren(m.allow ? t("허용함") : t("거절함"));
     card?.querySelector(".approval-actions")?.remove();
   } else if (m.type === "agent-steer" || m.type === "agent-queued") {
-    barNote = m.type === "agent-steer" ? `작업에 더함 · ${m.text}` : `끝나면 이어서 · ${m.text}`;
+    barNote = m.type === "agent-steer" ? t("작업에 더함 · {text}", { text: m.text }) : t("끝나면 이어서 · {text}", { text: m.text });
     renderBar();
     if (agentLoaded) agentLine("user", m.text);
   } else if (m.type === "agent-done") {
-    barNote = m.error ? `작업 실패 · ${m.error}` : `${firstSentence(agentAnswer || m.text) || "끝났습니다"}`;
+    barNote = m.error ? t("작업 실패 · {error}", { error: m.error }) : `${firstSentence(agentAnswer || m.text) || t("끝났습니다")}`;
     if (agentLoaded) {
       showThinking(false);
       if (m.error) agentLine("error", m.error);
@@ -1888,7 +1911,7 @@ async function handleAgentMessage(m) {
 // 대화 모드: 작업 버튼을 한 번 누르면 마이크가 켜진 채로 계속 듣는다.
 // 말이 1.5초 멈추면 그 말을 작업으로 보내고, 답을 소리로 읽은 뒤 "띵"이 나면 다시 말하면 된다. 다시 누르면 끝.
 let heardText = null; // 지금 말하는 중인 말 (미리보기)
-let listenHint = "마이크 준비 중…";
+let listenHint = t("마이크 준비 중…");
 // "agent" = 말로 작업(⌥V) | "paste" = 아무 앱에 받아쓰기(⌥D): 끝내면 받아쓴 글을 지금 앞에 있는 앱에 붙여넣는다
 let dictationMode = "agent";
 async function startDictation(mode = "agent") {
@@ -1898,7 +1921,7 @@ async function startDictation(mode = "agent") {
   try {
     dictation = await openMic();
   } catch (error) {
-    barNote = `마이크를 쓸 수 없습니다: ${error.message}`;
+    barNote = t("마이크를 쓸 수 없습니다: {message}", { message: error.message });
     renderBar();
     return;
   }
@@ -1907,10 +1930,10 @@ async function startDictation(mode = "agent") {
   lastActivity = "agent";
   barNote = null;
   heardText = null;
-  listenHint = "마이크 준비 중…";
+  listenHint = t("마이크 준비 중…");
   agentWave.attach(dictation.analyser);
   $("workButton").classList.add("listening");
-  $("workButton").setAttribute("aria-label", "대화 중 · 누르면 끝");
+  $("workButton").setAttribute("aria-label", t("대화 중 · 누르면 끝"));
   ws.send(JSON.stringify({ type: "dictate-start", mode }));
   renderBar();
   reportState();
@@ -1926,7 +1949,7 @@ function stopDictation({ cancel = false, ended = false } = {}) {
   heardText = null;
   agentWave.detach();
   $("workButton").classList.remove("listening");
-  $("workButton").setAttribute("aria-label", "말로 작업 시키기");
+  $("workButton").setAttribute("aria-label", t("말로 작업 시키기"));
   $("barText").classList.remove("heard");
   renderBar();
   reportState();
@@ -1960,7 +1983,7 @@ async function renderFolderEngine() {
     select.replaceChildren(
       ...Object.entries(ENGINE_LABELS).map(([id, label]) => {
         const ready = engineStatus?.[id] ?? true;
-        const option = new Option(ready ? label : `${label} (로그인 필요)`, id);
+        const option = new Option(ready ? label : t("{label} (로그인 필요)", { label }), id);
         option.disabled = !ready && id !== settings?.agentEngine;
         return option;
       }),
@@ -1984,12 +2007,12 @@ $("folderEngine").onchange = async () => {
 };
 
 function ago(at) {
-  if (!at) return "아직 대화 없음";
+  if (!at) return t("아직 대화 없음");
   const minutes = Math.round((Date.now() - at) / 60000);
-  if (minutes < 1) return "방금";
-  if (minutes < 60) return `${minutes}분 전`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)}시간 전`;
-  return `${Math.round(minutes / 60 / 24)}일 전`;
+  if (minutes < 1) return t("방금");
+  if (minutes < 60) return t("{n}분 전", { n: minutes });
+  if (minutes < 60 * 24) return t("{n}시간 전", { n: Math.round(minutes / 60) });
+  return t("{n}일 전", { n: Math.round(minutes / 60 / 24) });
 }
 
 function renderFolders({ folders, current, home }) {
@@ -1997,7 +2020,7 @@ function renderFolders({ folders, current, home }) {
   queueMicrotask(refitPanel);
   const list = $("folderList");
   if (!folders.length) {
-    list.replaceChildren(el("p", "empty-list", "아직 작업 폴더가 없습니다.\n아래 “+ 폴더 추가”로 일할 폴더를 고르세요. 한 번 넣으면 목록에 남습니다."));
+    list.replaceChildren(el("p", "empty-list", t("아직 작업 폴더가 없습니다.\n아래 “+ 폴더 추가”로 일할 폴더를 고르세요. 한 번 넣으면 목록에 남습니다.")));
     list.firstChild.style.whiteSpace = "pre-line";
     return;
   }
@@ -2009,15 +2032,15 @@ function renderFolders({ folders, current, home }) {
       pick.disabled = !f.exists;
       const text = el("span", "folder-text");
       const where = home && f.path.startsWith(home) ? `~${f.path.slice(home.length)}` : f.path;
-      text.append(el("span", "item-title", f.name), el("span", "item-meta", f.exists ? `${where} · ${ago(f.lastAt)}` : `${where} · 폴더를 찾을 수 없음`));
+      text.append(el("span", "item-title", f.name), el("span", "item-meta", f.exists ? `${where} · ${ago(f.lastAt)}` : `${where} · ${t("폴더를 찾을 수 없음")}`));
       pick.append(el("span", "folder-key", i < 9 ? String(i + 1) : ""), text);
       pick.onclick = () => chooseFolder(f.path);
       const remove = el("button", "remove-folder");
       const x = sfSymbols["xmark.circle.fill@14"];
       remove.append(x ? sfIcon(x) : "ⓧ");
       remove.type = "button";
-      remove.title = "목록에서 빼기 (폴더와 파일은 그대로)";
-      remove.setAttribute("aria-label", `${f.name} 목록에서 빼기`);
+      remove.title = t("목록에서 빼기 (폴더와 파일은 그대로)");
+      remove.setAttribute("aria-label", t("{name} 목록에서 빼기", { name: f.name }));
       remove.onclick = async () => renderFolders(await api("/api/agent/folders", { method: "POST", body: JSON.stringify({ remove: f.path }) }));
       row.append(pick, remove);
       return row;
@@ -2066,8 +2089,8 @@ function handleDictation(m) {
     // 처음 마이크가 켜졌을 때, 그리고 답을 다 읽은 뒤: 이제 말할 차례
     listenHint =
       dictationMode === "paste"
-        ? `말하세요 · ${hotkeyLabel(settings?.dictationHotkey) || "단축키"}를 다시 누르면 붙여넣기`
-        : "말하세요 · 작업 버튼을 다시 누르면 끝";
+        ? t("말하세요 · {key}를 다시 누르면 붙여넣기", { key: hotkeyLabel(settings?.dictationHotkey) || t("단축키") })
+        : t("말하세요 · 작업 버튼을 다시 누르면 끝");
     if (!agentBusy) barNote = null;
   }
   if (m.type === "dictate-partial") heardText = m.text || null;
@@ -2104,16 +2127,16 @@ function pasteText(text) {
   if (!text) return;
   if (isMacApp) return tellNative({ type: "paste", text });
   navigator.clipboard?.writeText(text).then(
-    () => showPasteResult(true, "클립보드에 복사했습니다"),
-    () => showPasteResult(false, "클립보드에 복사하지 못했습니다"),
+    () => showPasteResult(true, t("클립보드에 복사했습니다")),
+    () => showPasteResult(false, t("클립보드에 복사하지 못했습니다")),
   );
 }
 // 네이티브가 붙여넣기 결과를 알려 준다 (손쉬운 사용 권한이 없으면 클립보드에만 넣고 안내)
 function showPasteResult(ok, message) {
-  barNote = ok ? (message || "붙여넣었습니다") : message;
+  barNote = ok ? (message || t("붙여넣었습니다")) : message;
   renderBar();
   setTimeout(() => {
-    if (barNote === message || barNote === "붙여넣었습니다") {
+    if (barNote === message || barNote === t("붙여넣었습니다")) {
       barNote = null;
       renderBar();
     }
@@ -2139,11 +2162,11 @@ function newMeeting() {
 function renderShortcutHint() {
   const hint = $("shortcutHint");
   if (!hint) return;
-  $("toggle").title = `녹음${isMacApp && settings?.hotkey ? ` (${hotkeyLabel(settings.hotkey)})` : ""}`;
-  $("workButton").title = `말로 작업${isMacApp && settings?.agentHotkey ? ` (${hotkeyLabel(settings.agentHotkey)})` : ""}`;
+  $("toggle").title = `${t("녹음")}${isMacApp && settings?.hotkey ? ` (${hotkeyLabel(settings.hotkey)})` : ""}`;
+  $("workButton").title = `${t("말로 작업")}${isMacApp && settings?.agentHotkey ? ` (${hotkeyLabel(settings.agentHotkey)})` : ""}`;
   hint.hidden = false;
   if (!hint.hidden) {
-    hint.replaceChildren("녹음 파일을 창에 끌어다 놓으면 받아씁니다");
+    hint.replaceChildren(t("녹음 파일을 창에 끌어다 놓으면 받아씁니다"));
   }
   if ($("systemHint")) $("systemHint").hidden = !$("includeSystem").checked;
 }
