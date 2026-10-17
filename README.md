@@ -145,7 +145,6 @@ voin 내장 모델(`lib/summary-catalog.mjs`, `lib/local-llm.mjs`)은 Mi:dm 2.0 
   | Whisper large-v3 turbo | 886MB | 약 3분 | 미지원 | 문장부호 자연스러움. 짧은 소리에 영어 문장을 지어냄 |
   | Whisper large-v3 | 1.2GB | 약 5분 | 미지원 | turbo보다 낫지 않았음 |
   | Whisper small | 270MB | 약 1분 30초 | 미지원 | 가벼움. 오인식 많음 |
-  | SenseVoice Small | 250MB | 약 20초 | 미지원 | 가장 빠름. 띄어쓰기가 크게 깨짐 |
 
   2026-10-15 실제 회의 녹음(노트북 마이크, 한국어 5분)으로 비교했습니다(`scripts/compare-models.mjs`). 정답 대본이 없어 정확도는 결과를 읽고 판단했습니다. Moonshine 한국어는 짧은 발화에 "audiotext"만 내놓아 뺐습니다.
 - 모델은 하나만 불러와 마이크·화상회의·파일 불러오기가 함께 씁니다. 말이 멈추면 그 문장을 받아쓰고(실시간 스트리밍을 지원하는 모델도 같은 방식), 말하는 중에는 1.5초마다 미리보기 자막을 보여 줍니다.
