@@ -1050,6 +1050,7 @@ async function handleApi(req, res, url) {
     if (action === "delete") {
       if (llmDownload?.id === entry.id) return json(409, { error: "내려받는 중입니다. 먼저 취소하세요." });
       deleteModel(entry);
+      if (loadSettings().summaryModels.voin === entry.id) saveSettings({ summaryModels: { voin: "" } }); // 고른 모델을 지우면 선택도 비운다
     } else saveSettings({ summaryModels: { voin: entry.id } });
     await detectProviders({ refresh: true });
     broadcast({ type: "summary-models-changed" });
