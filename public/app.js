@@ -43,10 +43,10 @@ if (isMacApp) {
   document.body.classList.add("glass");
   setTimeout(() => document.body.classList.add("ready"), 800); // 아이콘이 오지 않아도 0.8초 뒤엔 보인다
 }
+// 막대 가운데는 언제나 끌 수 있다 (모델이 없을 때의 "설정 열기" 클릭은 앱이 끌기와 구분해 넘겨준다)
 function reportDragRegions() {
-  const ready = typeof model === "undefined" || model.state === "ready"; // 모델이 없을 때 막대 가운데는 설정 열기 버튼
   const r = $("barCenter").getBoundingClientRect();
-  tellNative({ type: "dragRegions", rects: ready ? [{ x: r.x, y: r.y, w: r.width, h: r.height }] : [] });
+  tellNative({ type: "dragRegions", rects: [{ x: r.x, y: r.y, w: r.width, h: r.height }] });
 }
 new ResizeObserver(reportDragRegions).observe(document.body);
 function reportState() {
@@ -204,6 +204,7 @@ function handleMessage(m) {
       renderBar();
       if (!recording) setIdleButton();
       if (!$("settingsView").hidden) loadModelList();
+      guideSetup();
       break;
     case "models-changed":
       if (!$("settingsView").hidden) loadModelList();
@@ -1331,6 +1332,24 @@ async function saveSummaryModel(id, model) {
 }
 
 $("recheckProviders").onclick = () => loadProviders(true);
+
+// 처음 실행처럼 쓸 모델이 없으면 설정부터 연다: 받아쓰기 모델이 없으면 모델 목록, 받아쓰기는 되는데
+// 요약 방법이 준비되지 않았으면 요약 설정으로 (앱을 켤 때마다 한 번씩만)
+let setupStep = null; // null | "asr" | "summary" | "done"
+async function guideSetup() {
+  if (recording || dictating || setupStep === "summary" || setupStep === "done") return;
+  if (model.state === "missing") {
+    if (setupStep !== "asr") openSettings("set-models");
+    setupStep = "asr";
+    return;
+  }
+  if (model.state !== "ready") return;
+  const { providers } = await api("/api/summary/providers");
+  const wanted = settings.summaryProvider;
+  const ready = wanted === "off" || (wanted === "auto" ? providers.some((p) => p.ready) : providers.find((p) => p.id === wanted)?.ready);
+  setupStep = ready ? "done" : "summary";
+  if (!ready) openSettings("set-summary");
+}
 
 async function openSettings(section) {
   if (recording) return;
