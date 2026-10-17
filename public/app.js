@@ -1148,7 +1148,11 @@ function providerRow(p) {
     const sel = el("select");
     sel.setAttribute("aria-label", `${p.name} 모델`);
     const current = settings.summaryModels?.[p.id] ?? "";
-    sel.append(new Option(p.defaultModel ? `기본 (${p.defaultModel})` : p.id === "claude" ? "Claude Code 기본" : "자동으로 고름", ""));
+    const auto = p.choice?.auto && p.choice.model ? `자동 (지금: ${p.choice.model})` : "자동으로 고름";
+    sel.append(new Option(p.id === "claude" ? "Claude Code 기본" : auto, ""));
+    // 받아 둔 목록 기준: 고른 모델보다 새 모델이 있거나, 고른 모델이 없어졌으면 알린다
+    if (p.choice?.newer) fail(`새 모델이 있습니다: ${p.choice.newer} (자동으로 두면 새 모델을 씁니다)`);
+    if (p.choice?.retired) fail(`고른 모델(${p.choice.retired})을 더 쓸 수 없어 ${p.choice.model}로 대신 요약합니다.`);
     if (current) sel.append(new Option(current, current));
     sel.value = current;
     sel.onchange = () => saveSummaryModel(p.id, sel.value);

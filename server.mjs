@@ -18,7 +18,7 @@ import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-clea
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
 import { nameSuggestions, renameVoices, saveNameSuggestions, voicePath, voiceUrls } from "./lib/voice-samples.mjs";
-import { detectProviders, listModels as listSummaryModels, pickProvider, saveApiKey, suggestSpeakerNames, summarize } from "./lib/summarizer.mjs";
+import { detectProviders, listModels as listSummaryModels, modelChoice, pickProvider, refreshModelLists, saveApiKey, suggestSpeakerNames, summarize } from "./lib/summarizer.mjs";
 import { findCatalogModel } from "./lib/model-catalog.mjs";
 import {
   activeModelEntry,
@@ -934,12 +934,14 @@ async function handleApi(req, res, url) {
   }
   if (route === "GET /api/summary/providers") {
     const providers = await detectProviders({ refresh: url.searchParams.has("refresh") });
-    return json(200, { providers: providers.map(({ path: _, ...p }) => p) });
+    const pinned = loadSettings().summaryModels;
+    return json(200, { providers: providers.map(({ path: _, ...p }) => ({ ...p, choice: modelChoice(p, pinned[p.id]) })) });
   }
   // API 키는 키체인에만 두고 화면에는 돌려주지 않는다 (등록 여부만)
   if (route === "POST /api/summary/key") {
     const { id, key } = await readJson(req);
     await saveApiKey(id, String(key ?? "").trim());
+    refreshSummaryModels();
     return json(200, {});
   }
   // ChatGPT·Grok 구독 로그인 (기기 코드): 코드를 화면에 보여 주고 브라우저로 확인 주소를 연다
@@ -957,6 +959,7 @@ async function handleApi(req, res, url) {
         onDone: async (error) => {
           if (error) console.error(`${id} 로그인 실패:`, error);
           await detectProviders({ refresh: true });
+          if (!error) refreshSummaryModels();
           broadcast({ type: "login-done", id, error });
         },
       });
@@ -1161,6 +1164,11 @@ wss.on("connection", (ws) => {
   });
 });
 
+// 요약에 쓸 외부 모델 목록을 뒤에서 받는다 (실패해도 요약은 받아 둔 목록이나 그때 받은 목록으로 한다)
+function refreshSummaryModels() {
+  refreshModelLists().catch((error) => console.error("요약 모델 목록 갱신 실패:", error.message));
+}
+
 // 맥 앱을 닫으면 SIGTERM이 온다: 녹음 중이던 회의를 (화자 분석 없이) 저장하고 끝낸다
 for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
@@ -1173,5 +1181,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
 // 모델을 불러오기 전에 화면부터 띄워, 모델이 없을 때 내려받기 안내를 보여 줄 수 있게 한다
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`\nvoin 준비 완료 → http://localhost:${PORT}\n`);
+  refreshSummaryModels();
+  setInterval(refreshSummaryModels, 6 * 60 * 60 * 1000); // 켜 둔 채로 지내도 하루에 한 번은 새 목록을 받는다
   loadActiveModel();
 });
