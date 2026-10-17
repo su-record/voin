@@ -916,7 +916,11 @@ function renderSpeakerCards(file, lines, voices, suggestions = {}) {
         const b = el("button");
         b.type = "button";
         b.title = "기록에서 이 발언 위치로 이동";
-        b.append(el("span", null, `“${l.text.length > 60 ? `${l.text.slice(0, 60)}…` : l.text}”`), el("time", null, l.time));
+        const clip = (t) => (t.length > 60 ? `${t.slice(0, 60)}…` : t);
+        const said = el("span", null, `“${clip(l.text)}”`);
+        // 외국어 발언은 번역도 함께 (정리할 때 붙인 "↳ 번역" 줄)
+        if (l.translation) said.append(el("span", "sc-translation", `↳ ${clip(l.translation)}`));
+        b.append(said, el("time", null, l.time));
         b.onclick = () => jumpToLine(l.time);
         li.append(b);
         quotes.append(li);
