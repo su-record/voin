@@ -1,11 +1,11 @@
 {
   "name": "voin",
   "version": "0.1.0",
-  "description": "이 맥의 마이크와 화상회의 소리를 받아쓰는 로컬 회의록 앱",
+  "description": "voin(voice in): 이 맥의 마이크와 화상회의 소리를 받아쓰는 맥 앱",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.mjs",
     "build:native": "swiftc -O native/syscap.swift -o native/syscap -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/Info.plist",
     "build:app": "native/app/build-app.sh",
     "build:dist": "native/app/build-app.sh --dist",

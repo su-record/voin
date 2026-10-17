@@ -1,4 +1,4 @@
-// 회의록 앱 서버: 마이크(화면)와 시스템 오디오(syscap)를 받아쓰고,
+// voin 서버: 마이크(화면)와 시스템 오디오(syscap)를 받아쓰고,
 // 끝나면 화자 분리 후 설정한 폴더(앱 폴더/Obsidian/직접 지정)에 Markdown으로 저장한다.
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,7 @@ import { WebSocketServer } from "ws";
 import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
+import { isLocalRequest } from "./lib/request-guard.mjs";
 import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-cleanup.mjs";
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
@@ -909,7 +910,7 @@ async function handleApi(req, res, url) {
     const { text } = await readJson(req);
     if (!String(text ?? "").trim()) return json(400, { error: "보낼 말이 없습니다." });
     // 작업 중이면 진행 중인 작업에 더하거나(Codex) 끝난 뒤 보낸다
-    agent.add(String(text).trim(), loadSettings());
+    agent.add(String(text).trim(), loadSettings()).catch((error) => broadcast({ type: "warning", message: error.message }));
     return json(202, {});
   }
   if (route === "POST /api/agent/interrupt") {
@@ -1042,6 +1043,7 @@ async function handleApi(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (!isLocalRequest(req.headers, PORT)) return res.writeHead(403).end("Forbidden");
   const url = new URL(req.url, "http://localhost");
   if (url.pathname.startsWith("/api/")) {
     try {
@@ -1078,7 +1080,7 @@ const server = http.createServer(async (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ server, path: "/ws", verifyClient: ({ req }) => isLocalRequest(req.headers, PORT) });
 
 wss.on("connection", (ws) => {
   clients.add(ws);
@@ -1102,7 +1104,11 @@ wss.on("connection", (ws) => {
   };
 
   let dictation = null;
-  ws.on("message", async (data, isBinary) => {
+  // 잘못된 메시지 하나로 서버(녹음 중인 회의 포함)가 꺼지지 않도록 오류는 화면에만 알린다
+  ws.on("message", (data, isBinary) =>
+    handleMessage(data, isBinary).catch((error) => send({ type: "error", message: `요청을 처리하지 못했습니다: ${error.message}` })),
+  );
+  async function handleMessage(data, isBinary) {
     if (isBinary) {
       const samples = new Float32Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
       if (meeting) meeting.pushMic(samples);
@@ -1144,7 +1150,7 @@ wss.on("connection", (ws) => {
     } else if (message.type === "stop") {
       await stopMeeting().catch((e) => send({ type: "error", message: `저장 중 오류: ${e.message}` }));
     }
-  });
+  }
 
   // 화면을 닫아도 그때까지의 내용은 저장하고 끝낸다
   ws.on("close", () => {

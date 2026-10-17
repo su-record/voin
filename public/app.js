@@ -1392,7 +1392,6 @@ $("agentHotkeyButton").addEventListener("keydown", async (e) => {
   renderAgentTarget();
   renderShortcutHint();
   tellNative({ type: "hotkey2", hotkey: settings.agentHotkey });
-tellNative({ type: "hotkey3", hotkey: settings.dictationHotkey });
 });
 
 // 받아쓰기 단축키 (⌥D): 같은 입력 방식
@@ -2020,7 +2019,7 @@ function dictateToggle() {
 }
 
 // 붙여넣기는 운영체제마다 다르다: 이 함수 하나만 플랫폼별로 바뀐다.
-// 맥 앱: 네이티브(MeetingNotesApp.swift)가 클립보드에 넣고 ⌘V를 보낸 뒤 원래 클립보드를 되돌린다.
+// 맥 앱: 네이티브(VoinApp.swift)가 클립보드에 넣고 ⌘V를 보낸 뒤 원래 클립보드를 되돌린다.
 // 다른 플랫폼(앞으로 Windows 등)은 같은 { type: "paste", text } 메시지를 받아 처리하면 된다.
 // 네이티브가 없으면(브라우저) 클립보드에 복사만 한다.
 function pasteText(text) {
@@ -2118,6 +2117,7 @@ $("includeSystem").onchange();
 renderShortcutHint();
 tellNative({ type: "hotkey", hotkey: settings.hotkey });
 tellNative({ type: "hotkey2", hotkey: settings.agentHotkey });
+tellNative({ type: "hotkey3", hotkey: settings.dictationHotkey });
 tellNative({ type: "menuBarIcon", visible: settings.menuBarIcon });
 const remembered = (key) => {
   try {
