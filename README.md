@@ -42,7 +42,7 @@ Apple 개발자 서명이 없는 앱이라 처음 열 때 macOS가 막습니다.
 
 버전은 `package.json`의 `version` 한 곳에서만 바꿉니다. 앱의 정보 창(voin → voin에 관하여)과 설정 → 정보에 표시됩니다.
 
-앱 안에 Node.js(Apple Silicon용), 서버 코드, 화자 분리 모델이 들어 있습니다. 받아쓰기 모델(751MB)은 기본 DMG에 넣지 않고, 앱을 처음 실행할 때 화면 맨 위 줄의 **내려받기** 버튼으로 Hugging Face에서 받습니다. 받은 모델은 `~/Library/Application Support/voin/models/`에 저장되고, SHA-256으로 손상 여부를 확인합니다. 받는 중 취소하면 받은 곳부터 이어 받습니다. 회사망 인증서 재서명에 대비해 맥 키체인 인증서를 쓰도록(`--use-system-ca`) 실행합니다. 설치 안내 원본은 `docs/팀원-설치-안내.md`입니다.
+앱 안에 Node.js(Apple Silicon용), 서버 코드, 화자 분리 모델이 들어 있습니다. 받아쓰기 모델(751MB)은 기본 DMG에 넣지 않고, 설정 → 받아쓰기 모델에서 골라 Hugging Face의 voin 사본 저장소(`tory-labs/voin-…-gguf`)에서 받습니다. 각 저장소에 원본 출처와 라이선스 원문이 있습니다. 받은 모델은 `~/Library/Application Support/voin/models/`에 저장되고, SHA-256으로 손상 여부를 확인합니다. 받는 중 취소하면 받은 곳부터 이어 받습니다. 회사망 인증서 재서명에 대비해 맥 키체인 인증서를 쓰도록(`--use-system-ca`) 실행합니다. 설치 안내 원본은 `docs/팀원-설치-안내.md`입니다.
 
 - 대상: Apple Silicon 맥, macOS 14.4 이상
 - Apple 개발자 서명·공증을 하지 않은 앱이라, 팀원은 첫 실행 때 시스템 설정 → 개인정보 보호 및 보안에서 "그래도 열기"를 한 번 눌러야 합니다. 회사에 Apple Developer 계정이 있으면 공증해서 이 단계를 없앨 수 있습니다.
