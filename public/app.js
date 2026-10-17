@@ -403,7 +403,7 @@ async function loadSummaryModelList() {
 
 function summaryModelCard(m, memoryGB) {
   const tags = [["", m.license]];
-  if (m.recommended) tags.unshift(["good", t("이 맥({gb}GB)에 추천", { gb: memoryGB })]);
+  if (m.recommended) tags.unshift(["good", t("지금 맥({gb}GB)에 추천", { gb: memoryGB })]);
   if (!m.fits) tags.push(["warn", t("메모리 {gb}GB 이상 필요", { gb: m.minMemoryGB })]);
   return modelCard(m, {
     // 측정치: 정답이 있는 합성 회의(6분 40초)에서 결정·할 일·남은 질문 14개 중 맞힌 비율, 요약 시간, 요약 중 메모리
