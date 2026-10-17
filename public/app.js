@@ -1171,6 +1171,7 @@ async function saveSettingsForm() {
   try {
     ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify(data) }));
     refreshSetupNeeds();
+    renderLicense();
     if (!recording) {
       setIdleButton();
       renderBar();
@@ -1428,6 +1429,18 @@ async function openSettings(section) {
 $("openSaveDir").onclick = () => api("/api/open-folder", { method: "POST" }).catch((e) => ($("saveDirText").textContent = e.message));
 $("revealLog").onclick = () => api("/api/reveal-log", { method: "POST" });
 
+// 허용 키 상태: 설정 → 일반에 키를 넣으면 확인 결과를 보여 준다
+async function renderLicense() {
+  const r = await api("/api/license");
+  const text = {
+    none: t("없음 · 유료 기능(어디서든 휴대폰 마이크)을 쓰려면 받은 키를 넣으세요"),
+    ok: t("유효 · {sub} · {expires}까지", { sub: r.sub, expires: r.expires }),
+    expired: t("만료됨 ({expires})", { expires: r.expires }),
+  }[r.state] ?? t("올바른 키가 아닙니다");
+  $("licenseStatus").textContent = text;
+  $("licenseStatus").classList.toggle("warn-text", r.state !== "ok" && r.state !== "none");
+}
+
 // 설정은 첫 화면(앱 아이콘 모양 버튼)에서 항목을 골라 그 항목 화면만 본다. page가 없으면 첫 화면
 // 정보 화면: 엔진(고정)과 받아쓰기·요약 모델(목록에서)의 출처·라이선스
 const ENGINES = [
@@ -1453,6 +1466,7 @@ async function loadLicenses() {
 
 function showSettingsPage(page) {
   if (page === "set-about") loadLicenses();
+  if (page === "set-general") renderLicense();
   if (REVIEW_PAGES.includes(page) && !settings.reviewedPages.includes(page)) {
     const reviewedPages = [...settings.reviewedPages, page];
     settings = { ...settings, reviewedPages };
