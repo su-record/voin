@@ -628,13 +628,19 @@ function supportsVocabulary(model) {
 
 function setActiveState(next) {
   const entry = activeModelEntry(loadSettings());
-  activeState = { id: entry.id, name: entry.name, sizeMB: Math.round(entry.size / 1e6), ...next };
+  activeState = { id: entry?.id ?? null, name: entry?.name ?? null, sizeMB: entry ? Math.round(entry.size / 1e6) : null, ...next };
   broadcast({ type: "model", ...activeState });
 }
 
 // 고른 모델을 불러온다. 없으면 missing으로 두고 내려받기를 안내한다.
 async function loadActiveModel() {
   const entry = activeModelEntry(loadSettings());
+  // 아직 고른 모델이 없다: 설정의 받아쓰기 모델 목록에서 고르게 한다
+  if (!entry) {
+    asr?.model.dispose();
+    asr = null;
+    return setActiveState({ state: "missing", canDownload: false, paused: false });
+  }
   const found = locateActive(entry, MODELS_DIR);
   if (!found) {
     asr?.model.dispose();
@@ -660,7 +666,7 @@ async function loadActiveModel() {
 async function startDownload(entry) {
   if (download) return;
   download = { id: entry.id, abort: new AbortController(), progress: { received: partialBytes(entry), total: entry.size } };
-  const isActive = () => activeModelEntry(loadSettings()).id === entry.id;
+  const isActive = () => activeModelEntry(loadSettings())?.id === entry.id;
   const report = () => {
     broadcast({ type: "models-changed" });
     if (isActive()) setActiveState({ state: "downloading", ...download.progress });
@@ -723,7 +729,7 @@ function summaryModelsPayload() {
 }
 
 function modelsPayload() {
-  const activeId = activeModelEntry(loadSettings()).id;
+  const activeId = activeModelEntry(loadSettings())?.id ?? null;
   return {
     activeId,
     active: activeState,
@@ -870,7 +876,9 @@ async function handleApi(req, res, url) {
   }
   if (route === "POST /api/model/download") {
     if (activeState.state === "ready" || activeState.state === "loading") return json(409, { error: t("모델이 이미 있습니다.") });
-    startDownload(activeModelEntry(loadSettings()));
+    const entry = activeModelEntry(loadSettings());
+    if (!entry) return json(409, { error: t("받아쓰기 모델을 고르지 않았습니다. 설정 → 받아쓰기 모델에서 고르세요.") });
+    startDownload(entry);
     return json(202, {});
   }
   if (route === "GET /api/models") return json(200, modelsPayload());
@@ -889,7 +897,7 @@ async function handleApi(req, res, url) {
       return json(200, {});
     }
     if (action === "delete") {
-      if (activeModelEntry(loadSettings()).id === entry.id) return json(409, { error: t("지금 쓰는 모델은 지울 수 없습니다. 다른 모델을 먼저 고르세요.") });
+      if (activeModelEntry(loadSettings())?.id === entry.id) return json(409, { error: t("지금 쓰는 모델은 지울 수 없습니다. 다른 모델을 먼저 고르세요.") });
       if (download?.id === entry.id) return json(409, { error: t("내려받는 중입니다. 먼저 취소하세요.") });
       deleteModel(entry);
       broadcast({ type: "models-changed" });

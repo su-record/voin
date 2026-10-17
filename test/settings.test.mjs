@@ -6,6 +6,7 @@ test("처음에는 저장 위치가 정해져 있지 않다 (사용자가 고른
   assert.equal(DEFAULTS.customFolder, "");
   assert.equal(DEFAULTS.obsidianVault, "");
   assert.deepEqual(DEFAULTS.reviewedPages, []); // 처음에는 모든 설정 항목이 회색
+  assert.equal(DEFAULTS.asrModel, ""); // 기본 받아쓰기 모델은 없다
   assert.equal(saveLocationChosen(DEFAULTS), false);
   assert.throws(() => saveDir(DEFAULTS), /저장 위치/);
 });

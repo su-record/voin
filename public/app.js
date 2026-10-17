@@ -327,6 +327,7 @@ function renderModelBar() {
 }
 
 async function modelAction() {
+  if (!model.id) return openSettings("set-models"); // 고른 모델이 없으면 목록에서 고르게
   const path = model.state === "downloading" ? "/api/model/cancel" : "/api/model/download";
   try {
     await api(path, { method: "POST" });
@@ -369,7 +370,14 @@ function asrModelCard(m) {
   if (m.installed) tags.push(["", SOURCE_TEXT[m.source]?.() ?? t("설치됨")]);
   if (m.size > 1.2e9) tags.push(["warn", t("메모리 16GB 이상 권장")]);
   return modelCard(m, {
-    sub: `${m.family} · ${fmtSize(m.size)} · ${m.languages} · ${t("1시간 녹음 처리 {time}", { time: fmtHourTime(m.rtf) })}`,
+    // 글자 정확도는 정답 대본이 있는 합성 회의 기준 (실제 목소리와 다를 수 있어 모델끼리 비교용)
+    sub: [
+      m.family,
+      fmtSize(m.size),
+      m.languages,
+      ...(m.accuracy ? [t("글자 정확도 {n}% (합성 음성)", { n: m.accuracy })] : []),
+      t("1시간 녹음 처리 {time}", { time: fmtHourTime(m.rtf) }),
+    ].join(" · "),
     tags,
     post: (action) => api(`/api/models/${m.id}/${action}`, { method: "POST" }),
     reload: loadModelList,
@@ -395,10 +403,17 @@ async function loadSummaryModelList() {
 
 function summaryModelCard(m, memoryGB) {
   const tags = [["", m.license]];
-  if (m.recommended) tags.unshift(["good", t("이 맥({gb}GB)에 추천", { gb: memoryGB })]);
+  if (m.recommended) tags.unshift(["good", t("지금 맥({gb}GB)에 추천", { gb: memoryGB })]);
   if (!m.fits) tags.push(["warn", t("메모리 {gb}GB 이상 필요", { gb: m.minMemoryGB })]);
   return modelCard(m, {
-    sub: `${m.family} · ${fmtSize(m.size)} · ${t("무료 · 기록이 이 맥 밖으로 나가지 않음")}`,
+    // 측정치: 정답이 있는 합성 회의(6분 40초)에서 결정·할 일·남은 질문 14개 중 맞힌 비율, 요약 시간, 요약 중 메모리
+    sub: [
+      m.family,
+      fmtSize(m.size),
+      t("정확도 {n}%", { n: m.accuracy }),
+      t("6분 회의 요약 {n}초", { n: m.seconds }),
+      t("메모리 약 {n}GB", { n: m.peakMemoryGB }),
+    ].join(" · "),
     tags,
     post: (action) => api(`/api/summary/local-models/${m.id}/${action}`, { method: "POST" }),
     reload: loadSummaryModelList,
@@ -1414,7 +1429,30 @@ $("openSaveDir").onclick = () => api("/api/open-folder", { method: "POST" }).cat
 $("revealLog").onclick = () => api("/api/reveal-log", { method: "POST" });
 
 // 설정은 첫 화면(앱 아이콘 모양 버튼)에서 항목을 골라 그 항목 화면만 본다. page가 없으면 첫 화면
+// 정보 화면: 엔진(고정)과 받아쓰기·요약 모델(목록에서)의 출처·라이선스
+const ENGINES = [
+  ["transcribe.cpp", "handy-computer", "MIT"],
+  ["llama.cpp · node-llama-cpp", "ggml-org · withcatai", "MIT"],
+  ["sherpa-onnx", "k2-fsa", "Apache 2.0"],
+  ["pyannote segmentation 3.0", "pyannote", "MIT"],
+  ["3D-Speaker ERes2Net", "Alibaba", "Apache 2.0"],
+];
+async function loadLicenses() {
+  const [{ models }, summary] = await Promise.all([api("/api/models"), api("/api/summary/local-models")]);
+  const rows = [...ENGINES, ...[...models, ...summary.models].map((m) => [m.name, m.family, m.license])];
+  $("licenseList").replaceChildren(
+    ...rows.map(([name, by, license]) => {
+      const row = el("div", "row");
+      const text = el("div", "row-text");
+      text.append(el("span", "row-title", name), el("span", "hint", by));
+      row.append(text, el("span", "hint", license));
+      return row;
+    }),
+  );
+}
+
 function showSettingsPage(page) {
+  if (page === "set-about") loadLicenses();
   if (REVIEW_PAGES.includes(page) && !settings.reviewedPages.includes(page)) {
     const reviewedPages = [...settings.reviewedPages, page];
     settings = { ...settings, reviewedPages };
