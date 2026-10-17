@@ -14,7 +14,8 @@ import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
 import { isLocalRequest } from "./lib/request-guard.mjs";
-import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-cleanup.mjs";
+import { numbersWarning, uncheckedNumbers } from "./lib/summary-check.mjs";
+import { applyDictionary, dictionaryTerms, removeFillers, removeRecordFillers } from "./lib/text-cleanup.mjs";
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
 import { nameSuggestions, renameVoices, saveNameSuggestions, voicePath, voiceUrls } from "./lib/voice-samples.mjs";
@@ -250,7 +251,9 @@ async function summarizeFile(filePath, onProgress, { required = false } = {}) {
   onProgress(`요약 중 (${provider.name})…`);
   try {
     const { text, by } = await summarize(provider, transcript, { ...options, model: settings.summaryModels[provider.id] });
-    setSummary(filePath, text, by);
+    // 요약의 날짜·숫자가 기록에 없으면 요약 아래에 경고를 붙인다 (작은 모델이 날짜를 잘못 옮기는 일이 있다)
+    const warning = numbersWarning(uncheckedNumbers(text, transcript));
+    setSummary(filePath, warning ? `${text}\n\n${warning}` : text, by);
     console.log(`${new Date().toLocaleString("ko-KR")} 요약 완료: ${path.basename(filePath)} (${by})`);
   } catch (error) {
     console.error("요약 실패:", error);
@@ -280,6 +283,7 @@ async function suggestNames(filePath, onProgress, { required = false } = {}) {
 // 정리가 끝난 기록의 마무리: 요약 → Obsidian 연결 → 팀 공유 폴더 사본(요약·연결이 들어간 최신본). 경고 글을 모아 돌려준다.
 async function completeRecord(filePath, onProgress, options) {
   const settings = loadSettings();
+  if (settings.recordFillers) fs.writeFileSync(filePath, removeRecordFillers(fs.readFileSync(filePath, "utf8")));
   const warnings = [await translateFile(filePath, settings, onProgress)];
   warnings.push(await summarizeFile(filePath, onProgress, options));
   await suggestNames(filePath, onProgress, options);
