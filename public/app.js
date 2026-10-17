@@ -1383,28 +1383,21 @@ async function openSettings(section) {
   showView("settingsView");
   loadModelList();
   loadProviders();
-  if (typeof section === "string") document.getElementById(section)?.scrollIntoView({ block: "start", behavior: "instant" });
+  showSettingsPage(typeof section === "string" ? section : null);
 }
 
 $("openSaveDir").onclick = () => api("/api/open-folder", { method: "POST" }).catch((e) => ($("saveDirText").textContent = e.message));
 $("revealLog").onclick = () => api("/api/reveal-log", { method: "POST" });
 
-// 왼쪽 항목 목록: 누르면 그 항목으로 이동, 스크롤하면 지금 보는 항목을 표시
-const navLinks = [...document.querySelectorAll(".settings-nav a")];
-for (const link of navLinks) {
-  link.onclick = (e) => {
-    e.preventDefault();
-    document.querySelector(link.getAttribute("href")).scrollIntoView({ block: "start" });
-  };
+// 설정은 첫 화면(앱 아이콘 모양 버튼)에서 항목을 골라 그 항목 화면만 본다. page가 없으면 첫 화면
+function showSettingsPage(page) {
+  $("settingsHome").hidden = Boolean(page);
+  form.hidden = !page;
+  for (const section of form.querySelectorAll(":scope > section")) section.hidden = section.id !== page;
+  form.scrollTop = 0;
 }
-form.addEventListener("scroll", () => {
-  const top = form.getBoundingClientRect().top + 40;
-  let current = navLinks[0];
-  for (const link of navLinks) if (document.querySelector(link.getAttribute("href")).getBoundingClientRect().top <= top) current = link;
-  if (form.scrollTop + form.clientHeight >= form.scrollHeight - 4) current = navLinks.at(-1);
-  navLinks.forEach((l) => l.classList.toggle("active", l === current));
-});
-navLinks[0].classList.add("active");
+for (const tile of document.querySelectorAll(".settings-tile")) tile.onclick = () => showSettingsPage(tile.dataset.page);
+$("settingsBack").onclick = () => showSettingsPage(null);
 
 // ───────── 녹음 시작/중지 단축키 ─────────
 // 저장 형식: "ctrl+alt+shift+cmd+KeyR" (수식키 순서 고정 + KeyboardEvent.code)

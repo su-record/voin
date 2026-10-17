@@ -310,12 +310,19 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--li
 
 /* 설정: 왼쪽 항목 목록 + 오른쪽 카드(맥 시스템 설정과 비슷한 줄 단위 배치) */
 .saved { position: fixed; right: 16px; bottom: 14px; z-index: 5; color: var(--ok); font-size: 12.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; box-shadow: var(--shadow); }
-.settings-layout { flex: 1; min-height: 0; display: flex; }
-.settings-nav { width: 150px; flex-shrink: 0; padding: 20px 8px 20px 24px; display: flex; flex-direction: column; gap: 2px; }
-.settings-nav a { color: var(--muted); text-decoration: none; padding: 5px 10px; border-radius: 6px; font-size: 14px; }
-.settings-nav a:hover { background: var(--hover); color: var(--text); }
-.settings-nav a.active { background: var(--hover); color: var(--text); font-weight: 600; }
-.settings { flex: 1; min-width: 0; overflow-y: auto; padding: 8px 24px 80px; scroll-behavior: smooth; }
+.settings-layout { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 설정 첫 화면: 앱 아이콘 모양 버튼 격자 (아이콘은 앱 아이콘과 같은 남보라 그라데이션 + 흰 선) */
+.settings-home { overflow-y: auto; padding: 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 20px 12px; align-content: start; max-width: 720px; width: 100%; margin: 0 auto; }
+.settings-home[hidden] { display: none; }
+.settings-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 4px; border: none; background: none; border-radius: 14px; color: var(--text); cursor: pointer; }
+.settings-tile:hover { background: var(--hover); }
+.settings-tile:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.tile-icon { width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; color: #fff; background: linear-gradient(150deg, #6d6af7, var(--brand) 55%, #372fa8); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 1px 2px rgb(0 0 0 / 0.18); }
+.tile-label { font-size: 12.5px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
+.settings-back { align-self: flex-start; border: none; background: none; color: var(--brand); font-size: 14px; padding: 4px 8px; margin: 4px 0 0 -8px; border-radius: 8px; cursor: pointer; position: sticky; top: 0; z-index: 1; }
+.settings-back:hover { background: var(--hover); }
+.settings { flex: 1; min-width: 0; overflow-y: auto; padding: 8px 24px 80px; display: flex; flex-direction: column; }
+.settings[hidden] { display: none; }
 .group { max-width: 680px; padding-top: 12px; }
 .group h2 { font-size: 15px; margin: 12px 0 8px; }
 .group h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 0 6px; }
