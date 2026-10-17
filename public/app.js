@@ -280,7 +280,9 @@ function renderModelBar() {
     downloading: model.verifying ? "받은 파일을 확인하는 중…" : `${name} 내려받는 중… ${mb(model.received ?? 0)} / ${mb(model.total ?? 0)}MB`,
     error: model.message,
   };
-  $("modelBar").hidden = model.state === "ready";
+  // 모델이 없을 때는 띄우지 않는다: 막대 가운데 안내(누르면 모델 설정)와 처음 실행 때 열리는 모델 목록에서
+  // 사용자가 직접 골라 받는다. 받는 중·불러오는 중·오류만 알린다
+  $("modelBar").hidden = model.state === "ready" || model.state === "missing";
   $("modelBar").dataset.state = model.state;
   $("modelText").textContent = texts[model.state] ?? "";
   $("modelProgress").hidden = model.state !== "downloading";
@@ -383,12 +385,13 @@ function el(tag, className, text) {
 
 // 모델 카드 (받아쓰기·요약 공통). tags: [[색 클래스, 글], …]
 function modelCard(m, { sub, tags, post, reload, canDelete }) {
-  const card = el("article", `model-card${m.active ? " active" : ""}`);
+  const inUse = m.active && m.installed; // 고른 모델이라도 아직 받지 않았으면 "사용 중"이 아니다
+  const card = el("article", `model-card${inUse ? " active" : ""}`);
   const top = el("div", "model-top");
   const info = el("div");
   info.append(el("div", "model-name", m.name), el("div", "model-sub", sub));
   const badges = el("div", "model-badges");
-  if (m.active) badges.append(el("span", "tag blue", "사용 중"));
+  if (inUse) badges.append(el("span", "tag blue", "사용 중"));
   if (m.badge) badges.append(el("span", "tag good", m.badge));
   for (const [cls, text] of tags) badges.append(el("span", `tag${cls ? ` ${cls}` : ""}`, text));
   info.append(badges);
