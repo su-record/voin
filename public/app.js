@@ -227,6 +227,7 @@ function handleMessage(m) {
       if (!$("settingsView").hidden) {
         loadSummaryModelList();
         loadProviders();
+        refreshSetupNeeds();
       }
       break;
     case "recovery-done":
@@ -249,7 +250,10 @@ function handleMessage(m) {
       break;
     case "login-done":
       if (m.error) setJobStatus(t("로그인 실패: {error}", { error: m.error }));
-      if (!$("settingsView").hidden) loadProviders(true);
+      if (!$("settingsView").hidden) {
+        loadProviders(true);
+        refreshSetupNeeds();
+      }
       break;
     case "agent-start":
     case "agent-delta":
@@ -309,6 +313,7 @@ function renderModelBar() {
 
   // 사이드바 아래: 지금 쓰는 모델과 상태
   const percent = model.total ? Math.round(((model.received ?? 0) / model.total) * 100) : 0;
+  updateSettingsLocks();
   $("modelChip").dataset.state = model.state;
   $("modelChipText").textContent =
     {
@@ -382,6 +387,10 @@ async function loadSummaryModelList() {
     return;
   }
   $("summaryModelList").replaceChildren(...data.models.map((m) => summaryModelCard(m, data.memoryGB)));
+  // 외국어 번역은 번역이 되는 내장 모델을 고른 뒤에만 켤 수 있다
+  const canTranslate = data.models.some((m) => m.active && m.translates);
+  form.elements.translateForeign.disabled = !canTranslate;
+  $("translateNeed").hidden = canTranslate;
 }
 
 function summaryModelCard(m, memoryGB) {
@@ -1142,6 +1151,7 @@ async function saveSettingsForm() {
   }
   try {
     ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify(data) }));
+    refreshSetupNeeds();
     $("savedBadge").textContent = t("저장됨");
     $("savedBadge").hidden = false;
     clearTimeout(savedTimer);
@@ -1371,8 +1381,7 @@ async function guideSetup() {
   }
   if (model.state !== "ready") return;
   const { providers } = await api("/api/summary/providers");
-  const wanted = settings.summaryProvider;
-  const ready = wanted === "off" || (wanted === "auto" ? providers.some((p) => p.ready) : providers.find((p) => p.id === wanted)?.ready);
+  const ready = summaryReady(providers);
   setupStep = ready ? "done" : "summary";
   if (!ready) openSettings("set-summary");
 }
@@ -1384,6 +1393,7 @@ async function openSettings(section) {
   loadModelList();
   loadProviders();
   showSettingsPage(typeof section === "string" ? section : null);
+  refreshSetupNeeds();
 }
 
 $("openSaveDir").onclick = () => api("/api/open-folder", { method: "POST" }).catch((e) => ($("saveDirText").textContent = e.message));
@@ -1396,7 +1406,41 @@ function showSettingsPage(page) {
   for (const section of form.querySelectorAll(":scope > section")) section.hidden = section.id !== page;
   form.scrollTop = 0;
 }
-for (const tile of document.querySelectorAll(".settings-tile")) tile.onclick = () => showSettingsPage(tile.dataset.page);
+// 항목마다 설정이 아직 안 끝났으면 아이콘을 회색으로 하고 아래에 할 일을 적는다.
+// 앞 단계(받아쓰기 모델)가 없어 못 쓰는 항목(locked)은 누르면 받아쓰기 모델 화면으로 보낸다.
+// 요약·음성 작업은 서버에 물어봐야 알아서 설정을 열 때·바꿀 때 다시 확인한다
+let setupNeeds = {}; // { 항목 id: 할 일 }
+const summaryReady = (providers) => {
+  const wanted = settings.summaryProvider;
+  return wanted === "off" || (wanted === "auto" ? providers.some((p) => p.ready) : Boolean(providers.find((p) => p.id === wanted)?.ready));
+};
+async function refreshSetupNeeds() {
+  const [{ providers }, { engines }] = await Promise.all([api("/api/summary/providers"), api("/api/agent/engines")]);
+  const engineReady = engines.find((e) => e.id === settings.agentEngine)?.ready;
+  setupNeeds = {
+    "set-summary": summaryReady(providers) ? null : t("요약 방법 설정 필요"),
+    "set-agent": engineReady && settings.agentFolder ? null : t("작업 도구·폴더 설정 필요"),
+  };
+  updateSettingsLocks();
+}
+function updateSettingsLocks() {
+  const asrReady = model.state === "ready";
+  for (const tile of document.querySelectorAll(".settings-tile")) {
+    const page = tile.dataset.page;
+    const locked = tile.dataset.requires === "asr" && !asrReady;
+    const need = locked ? t("받아쓰기 모델 필요") : page === "set-models" && !asrReady ? t("모델 내려받기 필요") : (setupNeeds[page] ?? null);
+    tile.classList.toggle("locked", locked);
+    tile.classList.toggle("incomplete", Boolean(need));
+    tile.title = need ?? "";
+    const note = tile.querySelector(".tile-note");
+    note.textContent = need ?? "";
+    note.hidden = !need;
+  }
+}
+for (const tile of document.querySelectorAll(".settings-tile")) {
+  tile.onclick = () => showSettingsPage(tile.classList.contains("locked") ? "set-models" : tile.dataset.page);
+}
+updateSettingsLocks();
 $("settingsBack").onclick = () => showSettingsPage(null);
 
 // ───────── 녹음 시작/중지 단축키 ─────────

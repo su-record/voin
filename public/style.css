@@ -319,7 +319,14 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--li
 .settings-tile:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .tile-icon { width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; color: #fff; background: linear-gradient(150deg, #6d6af7, var(--brand) 55%, #372fa8); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 1px 2px rgb(0 0 0 / 0.18); }
 .tile-label { font-size: 12.5px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
-.settings-back { align-self: flex-start; border: none; background: none; color: var(--brand); font-size: 14px; padding: 4px 8px; margin: 4px 0 0 -8px; border-radius: 8px; cursor: pointer; position: sticky; top: 0; z-index: 1; }
+.tile-note { font-size: 11px; line-height: 1.2; color: var(--muted); margin-top: -4px; text-align: center; }
+/* 설정이 아직 안 끝난 항목은 회색, 앞 단계가 없어 잠긴 항목은 더 흐리게 */
+.settings-tile.incomplete .tile-icon { filter: grayscale(1); opacity: 0.6; }
+.settings-tile.locked .tile-icon { opacity: 0.35; }
+.settings-tile.locked .tile-label { color: var(--muted); }
+.hint.warn-text { display: block; color: var(--warn); margin-top: 2px; }
+.switch:disabled { opacity: 0.4; cursor: not-allowed; }
+.settings-back { align-self: flex-start; border: none; background: none; color: var(--brand); font-size: 14px; padding: 4px 8px; margin: 4px 0 0 -8px; border-radius: 8px; cursor: pointer; }
 .settings-back:hover { background: var(--hover); }
 .settings { flex: 1; min-width: 0; overflow-y: auto; padding: 8px 24px 80px; display: flex; flex-direction: column; }
 .settings[hidden] { display: none; }
