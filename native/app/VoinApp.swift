@@ -28,13 +28,18 @@ struct WebState: Decodable {
     var busy: Bool { processing != nil }
 }
 
-// 제목줄이 없는 창: 웹 화면이 알려 준 자리(막대 가운데 등)를 누르고 끌면 창이 움직인다
+// 제목줄이 없는 창: 웹 화면이 알려 준 자리(막대 가운데 등)를 누르고 끌면 창이 움직인다.
+// 그 자리는 클릭도 받는다(모델이 없을 때 막대 가운데 = 설정 열기): 움직이지 않고 떼면 클릭으로 웹에 넘긴다
 final class VoinWebView: WKWebView {
     var dragRects: [NSRect] = [] // 웹 좌표 (왼쪽 위가 0,0)
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         let point = NSPoint(x: p.x, y: isFlipped ? p.y : bounds.height - p.y)
-        if dragRects.contains(where: { $0.contains(point) }) { window?.performDrag(with: event) } else { super.mouseDown(with: event) }
+        guard let window, dragRects.contains(where: { $0.contains(point) }) else { return super.mouseDown(with: event) }
+        let next = window.nextEvent(matching: [.leftMouseUp, .leftMouseDragged])
+        if next?.type == .leftMouseDragged { return window.performDrag(with: event) }
+        super.mouseDown(with: event)
+        if let up = next { super.mouseUp(with: up) }
     }
 }
 
