@@ -34,7 +34,7 @@ rm -rf "$BUILD" && mkdir -p "$APP/Contents/MacOS" "$RES/app/native" "$RES/app/mo
 echo "1/5 네이티브 코드 컴파일"
 swiftc -O -target arm64-apple-macos14.4 "$PROJECT_DIR/native/syscap.swift" -o "$RES/app/native/syscap" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$PROJECT_DIR/native/Info.plist" 2>/dev/null
-swiftc -O -target arm64-apple-macos14.4 "$APP_SRC/MeetingNotesApp.swift" -o "$APP/Contents/MacOS/MeetingNotes"
+swiftc -O -target arm64-apple-macos14.4 "$APP_SRC/VoinApp.swift" -o "$APP/Contents/MacOS/voin"
 
 echo "2/5 서버 코드와 라이브러리 복사"
 cp "$PROJECT_DIR/server.mjs" "$PROJECT_DIR/package.json" "$RES/app/"
@@ -59,10 +59,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleIdentifier</key><string>local.meeting-notes.app</string>
+  <key>CFBundleIdentifier</key><string>local.voin.app</string>
   <key>CFBundleName</key><string>voin</string>
   <key>CFBundleDisplayName</key><string>voin</string>
-  <key>CFBundleExecutable</key><string>MeetingNotes</string>
+  <key>CFBundleExecutable</key><string>voin</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>

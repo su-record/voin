@@ -50,7 +50,7 @@ guard status == noErr, let uidRef else { fail("출력 장치 UID 읽기 실패",
 let outputUID = uidRef.takeRetainedValue() as String
 
 let aggregateDescription: [String: Any] = [
-    kAudioAggregateDeviceNameKey: "MeetingNotes System Capture",
+    kAudioAggregateDeviceNameKey: "voin System Capture",
     kAudioAggregateDeviceUIDKey: UUID().uuidString,
     kAudioAggregateDeviceMainSubDeviceKey: outputUID,
     kAudioAggregateDeviceIsPrivateKey: true,

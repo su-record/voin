@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>local.meeting-notes.syscap</string>
+	<string>local.voin.syscap</string>
 	<key>CFBundleName</key>
 	<string>syscap</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>화상회의 상대방 목소리를 회의록에 받아쓰기 위해 시스템 오디오를 녹음합니다.</string>
+	<string>화상회의 상대방 목소리를 기록에 받아쓰기 위해 시스템 오디오를 녹음합니다.</string>
 </dict>
 </plist>

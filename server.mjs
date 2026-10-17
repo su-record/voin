@@ -1,4 +1,4 @@
-// 회의록 앱 서버: 마이크(화면)와 시스템 오디오(syscap)를 받아쓰고,
+// voin 서버: 마이크(화면)와 시스템 오디오(syscap)를 받아쓰고,
 // 끝나면 화자 분리 후 설정한 폴더(앱 폴더/Obsidian/직접 지정)에 Markdown으로 저장한다.
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -13,11 +13,24 @@ import { WebSocketServer } from "ws";
 import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
+import { isLocalRequest } from "./lib/request-guard.mjs";
 import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-cleanup.mjs";
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
 import { nameSuggestions, renameVoices, saveNameSuggestions, voicePath, voiceUrls } from "./lib/voice-samples.mjs";
-import { detectProviders, listModels as listSummaryModels, pickProvider, saveApiKey, suggestSpeakerNames, summarize } from "./lib/summarizer.mjs";
+import { findSummaryModel } from "./lib/summary-catalog.mjs";
+import {
+  detectProviders,
+  listModels as listSummaryModels,
+  localSummaryModels,
+  memoryGB,
+  modelChoice,
+  pickProvider,
+  refreshModelLists,
+  saveApiKey,
+  suggestSpeakerNames,
+  summarize,
+} from "./lib/summarizer.mjs";
 import { findCatalogModel } from "./lib/model-catalog.mjs";
 import {
   activeModelEntry,
@@ -645,6 +658,38 @@ async function startDownload(entry) {
   }
 }
 
+// voin 내장 요약 모델 내려받기 (받아쓰기 모델과 따로, 한 번에 하나)
+let llmDownload = null; // { id, abort, progress }
+async function startLlmDownload(entry) {
+  if (llmDownload) return;
+  llmDownload = { id: entry.id, abort: new AbortController(), progress: { received: partialBytes(entry), total: entry.size } };
+  const report = () => broadcast({ type: "summary-models-changed" });
+  report();
+  try {
+    await downloadModel(entry, {
+      signal: llmDownload.abort.signal,
+      onProgress: (p) => {
+        llmDownload.progress = p;
+        report();
+      },
+    });
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      console.error("요약 모델 내려받기 실패:", error);
+      broadcast({ type: "summary-models-error", id: entry.id, message: describeDownloadError(error) });
+    }
+  } finally {
+    llmDownload = null;
+    await detectProviders({ refresh: true });
+    report();
+  }
+}
+
+function summaryModelsPayload() {
+  const models = localSummaryModels(loadSettings().summaryModels.voin);
+  return { memoryGB: memoryGB(), models: models.map((m) => ({ ...m, downloading: llmDownload?.id === m.id ? llmDownload.progress : null })) };
+}
+
 function modelsPayload() {
   const activeId = activeModelEntry(loadSettings()).id;
   return {
@@ -909,7 +954,7 @@ async function handleApi(req, res, url) {
     const { text } = await readJson(req);
     if (!String(text ?? "").trim()) return json(400, { error: "보낼 말이 없습니다." });
     // 작업 중이면 진행 중인 작업에 더하거나(Codex) 끝난 뒤 보낸다
-    agent.add(String(text).trim(), loadSettings());
+    agent.add(String(text).trim(), loadSettings()).catch((error) => broadcast({ type: "warning", message: error.message }));
     return json(202, {});
   }
   if (route === "POST /api/agent/interrupt") {
@@ -933,12 +978,14 @@ async function handleApi(req, res, url) {
   }
   if (route === "GET /api/summary/providers") {
     const providers = await detectProviders({ refresh: url.searchParams.has("refresh") });
-    return json(200, { providers: providers.map(({ path: _, ...p }) => p) });
+    const pinned = loadSettings().summaryModels;
+    return json(200, { providers: providers.map(({ path: _, ...p }) => ({ ...p, choice: modelChoice(p, pinned[p.id]) })) });
   }
   // API 키는 키체인에만 두고 화면에는 돌려주지 않는다 (등록 여부만)
   if (route === "POST /api/summary/key") {
     const { id, key } = await readJson(req);
     await saveApiKey(id, String(key ?? "").trim());
+    refreshSummaryModels();
     return json(200, {});
   }
   // ChatGPT·Grok 구독 로그인 (기기 코드): 코드를 화면에 보여 주고 브라우저로 확인 주소를 연다
@@ -956,6 +1003,7 @@ async function handleApi(req, res, url) {
         onDone: async (error) => {
           if (error) console.error(`${id} 로그인 실패:`, error);
           await detectProviders({ refresh: true });
+          if (!error) refreshSummaryModels();
           broadcast({ type: "login-done", id, error });
         },
       });
@@ -964,6 +1012,29 @@ async function handleApi(req, res, url) {
     } catch (error) {
       return json(400, { error: error.message });
     }
+  }
+  if (route === "GET /api/summary/local-models") return json(200, summaryModelsPayload());
+  const llmRoute = url.pathname.match(/^\/api\/summary\/local-models\/([\w.-]+)\/(download|cancel|delete|use)$/);
+  if (llmRoute && req.method === "POST") {
+    const entry = findSummaryModel(llmRoute[1]);
+    if (!entry) return json(404, { error: "없는 모델입니다." });
+    const action = llmRoute[2];
+    if (action === "download") {
+      if (llmDownload && llmDownload.id !== entry.id) return json(409, { error: "다른 요약 모델을 내려받는 중입니다. 끝난 뒤 다시 시도하세요." });
+      startLlmDownload(entry);
+      return json(202, {});
+    }
+    if (action === "cancel") {
+      if (llmDownload?.id === entry.id) llmDownload.abort.abort();
+      return json(200, {});
+    }
+    if (action === "delete") {
+      if (llmDownload?.id === entry.id) return json(409, { error: "내려받는 중입니다. 먼저 취소하세요." });
+      deleteModel(entry);
+    } else saveSettings({ summaryModels: { voin: entry.id } });
+    await detectProviders({ refresh: true });
+    broadcast({ type: "summary-models-changed" });
+    return json(200, summaryModelsPayload());
   }
   if (route === "GET /api/summary/models") {
     const settings = loadSettings();
@@ -1042,6 +1113,7 @@ async function handleApi(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (!isLocalRequest(req.headers, PORT)) return res.writeHead(403).end("Forbidden");
   const url = new URL(req.url, "http://localhost");
   if (url.pathname.startsWith("/api/")) {
     try {
@@ -1078,7 +1150,7 @@ const server = http.createServer(async (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ server, path: "/ws", verifyClient: ({ req }) => isLocalRequest(req.headers, PORT) });
 
 wss.on("connection", (ws) => {
   clients.add(ws);
@@ -1102,7 +1174,11 @@ wss.on("connection", (ws) => {
   };
 
   let dictation = null;
-  ws.on("message", async (data, isBinary) => {
+  // 잘못된 메시지 하나로 서버(녹음 중인 회의 포함)가 꺼지지 않도록 오류는 화면에만 알린다
+  ws.on("message", (data, isBinary) =>
+    handleMessage(data, isBinary).catch((error) => send({ type: "error", message: `요청을 처리하지 못했습니다: ${error.message}` })),
+  );
+  async function handleMessage(data, isBinary) {
     if (isBinary) {
       const samples = new Float32Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
       if (meeting) meeting.pushMic(samples);
@@ -1144,7 +1220,7 @@ wss.on("connection", (ws) => {
     } else if (message.type === "stop") {
       await stopMeeting().catch((e) => send({ type: "error", message: `저장 중 오류: ${e.message}` }));
     }
-  });
+  }
 
   // 화면을 닫아도 그때까지의 내용은 저장하고 끝낸다
   ws.on("close", () => {
@@ -1154,6 +1230,11 @@ wss.on("connection", (ws) => {
     stopMeeting().catch((e) => console.error("녹음 종료 중 오류:", e));
   });
 });
+
+// 요약에 쓸 외부 모델 목록을 뒤에서 받는다 (실패해도 요약은 받아 둔 목록이나 그때 받은 목록으로 한다)
+function refreshSummaryModels() {
+  refreshModelLists().catch((error) => console.error("요약 모델 목록 갱신 실패:", error.message));
+}
 
 // 맥 앱을 닫으면 SIGTERM이 온다: 녹음 중이던 회의를 (화자 분석 없이) 저장하고 끝낸다
 for (const signal of ["SIGTERM", "SIGINT"]) {
@@ -1167,5 +1248,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
 // 모델을 불러오기 전에 화면부터 띄워, 모델이 없을 때 내려받기 안내를 보여 줄 수 있게 한다
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`\nvoin 준비 완료 → http://localhost:${PORT}\n`);
+  refreshSummaryModels();
+  setInterval(refreshSummaryModels, 6 * 60 * 60 * 1000); // 켜 둔 채로 지내도 하루에 한 번은 새 목록을 받는다
   loadActiveModel();
 });

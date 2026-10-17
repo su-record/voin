@@ -12,7 +12,7 @@ const [, , wav, outDir, only] = process.argv;
 const full = readWav(wav);
 const clip = (a, b) => full.subarray(a * 16000, b * 16000);
 const clips = { "앞부분": clip(0, 150), "질의응답": clip(1920, 2070) };
-const dirs = [path.join(os.homedir(), "Library/Application Support/MeetingNotes/models")];
+const dirs = [path.join(os.homedir(), "Library/Application Support/voin/models")];
 const handy = path.join(os.homedir(), ".cache/huggingface/hub");
 function locate(m) {
   for (const d of dirs) if (fs.existsSync(path.join(d, m.file))) return path.join(d, m.file);
