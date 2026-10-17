@@ -586,11 +586,15 @@ function closeMic(mic) {
 }
 
 // 녹음 중이 아닐 때의 버튼: 모델이 준비되어야 누를 수 있다
+// 저장 위치를 골랐는지 (처음에는 정해져 있지 않다). 고르기 전에는 녹음·불러오기를 하지 않는다
+const saveReady = () => Boolean(settings && (settings.saveMode === "obsidian" ? settings.obsidianVault : settings.customFolder));
+
 function setIdleButton() {
   const ready = model.state === "ready";
-  setButton(ready ? t("녹음") : t("모델 준비 중"), !ready || ws?.readyState !== WebSocket.OPEN);
+  const canRecord = ready && saveReady();
+  setButton(!ready ? t("모델 준비 중") : canRecord ? t("녹음") : t("저장 위치를 고르세요"), !canRecord || ws?.readyState !== WebSocket.OPEN);
   $("workButton").disabled = !ready;
-  $("importButton").disabled = !ready || recording;
+  $("importButton").disabled = !canRecord || recording;
 }
 
 function setButton(label, disabled) {
@@ -1152,6 +1156,11 @@ async function saveSettingsForm() {
   try {
     ({ settings } = await api("/api/settings", { method: "POST", body: JSON.stringify(data) }));
     refreshSetupNeeds();
+    if (!recording) {
+      setIdleButton();
+      renderBar();
+    }
+    guideSetup();
     $("savedBadge").textContent = t("저장됨");
     $("savedBadge").hidden = false;
     clearTimeout(savedTimer);
@@ -1380,6 +1389,11 @@ async function guideSetup() {
     return;
   }
   if (model.state !== "ready") return;
+  if (!saveReady()) {
+    if (setupStep !== "save") openSettings("set-save");
+    setupStep = "save";
+    return;
+  }
   const { providers } = await api("/api/summary/providers");
   const ready = summaryReady(providers);
   setupStep = ready ? "done" : "summary";
@@ -1401,6 +1415,11 @@ $("revealLog").onclick = () => api("/api/reveal-log", { method: "POST" });
 
 // 설정은 첫 화면(앱 아이콘 모양 버튼)에서 항목을 골라 그 항목 화면만 본다. page가 없으면 첫 화면
 function showSettingsPage(page) {
+  if (REVIEW_PAGES.includes(page) && !settings.reviewedPages.includes(page)) {
+    const reviewedPages = [...settings.reviewedPages, page];
+    settings = { ...settings, reviewedPages };
+    api("/api/settings", { method: "POST", body: JSON.stringify({ reviewedPages }) }).then((r) => ((settings = r.settings), updateSettingsLocks()));
+  }
   $("settingsHome").hidden = Boolean(page);
   form.hidden = !page;
   for (const section of form.querySelectorAll(":scope > section")) section.hidden = section.id !== page;
@@ -1410,6 +1429,8 @@ function showSettingsPage(page) {
 // 앞 단계(받아쓰기 모델)가 없어 못 쓰는 항목(locked)은 누르면 받아쓰기 모델 화면으로 보낸다.
 // 요약·음성 작업은 서버에 물어봐야 알아서 설정을 열 때·바꿀 때 다시 확인한다
 let setupNeeds = {}; // { 항목 id: 할 일 }
+// 기본값으로도 되는 항목: 처음에는 회색("확인 필요"), 사용자가 한 번 열어 보면 컬러
+const REVIEW_PAGES = ["set-general", "set-format", "set-asr", "set-diar", "set-dictation", "set-about"];
 const summaryReady = (providers) => {
   const wanted = settings.summaryProvider;
   return wanted === "off" || (wanted === "auto" ? providers.some((p) => p.ready) : Boolean(providers.find((p) => p.id === wanted)?.ready));
@@ -1428,7 +1449,13 @@ function updateSettingsLocks() {
   for (const tile of document.querySelectorAll(".settings-tile")) {
     const page = tile.dataset.page;
     const locked = tile.dataset.requires === "asr" && !asrReady;
-    const need = locked ? t("받아쓰기 모델 필요") : page === "set-models" && !asrReady ? t("모델 내려받기 필요") : (setupNeeds[page] ?? null);
+    const need = locked
+      ? t("받아쓰기 모델 필요")
+      : page === "set-models" && !asrReady
+        ? t("모델 내려받기 필요")
+        : page === "set-save" && !saveReady()
+          ? t("저장 위치 설정 필요")
+          : (setupNeeds[page] ?? (REVIEW_PAGES.includes(page) && !settings?.reviewedPages?.includes(page) ? t("확인 필요") : null));
     tile.classList.toggle("locked", locked);
     tile.classList.toggle("incomplete", Boolean(need));
     tile.title = need ?? "";
@@ -1655,6 +1682,7 @@ function renderBar() {
     text.append(dot("warn"), model.state === "downloading" ? t("받아쓰기 모델 내려받는 중…") : model.state === "loading" ? t("받아쓰기 모델 불러오는 중…") : t("받아쓰기 모델이 필요합니다 · ⚙"));
     return;
   }
+  if (!saveReady()) return text.append(dot("warn"), t("저장 위치를 고르세요 · ⚙"));
   if (processing) return text.append(dot("brand"), processing);
   if (agentBusy) return text.append(dot("brand"), barNote ?? t("작업 중…"));
   if (barNote) return text.append(dot("brand"), barNote);
@@ -1668,7 +1696,9 @@ function renderBar() {
 // 💬 실시간 글: 녹음 중이면 받아쓰는 글, 작업이면 대화
 // 모델이 준비되지 않았을 때 막대 가운데를 누르면 모델 설정으로
 $("barCenter").onclick = () => {
-  if (model.state !== "ready" && !recording && !dictating) openSettings("set-models");
+  if (recording || dictating) return;
+  if (model.state !== "ready") openSettings("set-models");
+  else if (!saveReady()) openSettings("set-save");
 };
 
 $("streamToggle").onclick = () => {
