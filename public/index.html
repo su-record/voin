@@ -231,7 +231,7 @@
             <h2>받아쓰기</h2>
             <div class="card">
               <div class="row">
-                <div class="row-text"><span class="row-title">언어</span><span class="hint">한 언어로 고르면 다른 언어로 한 말은 기록에서 빠집니다. 외국어가 섞이는 회의는 자동 감지로 두세요.</span></div>
+                <div class="row-text"><span class="row-title">언어</span><span class="hint">한 언어로 고르면 다른 언어로 한 말은 기록에서 빠집니다. 외국어가 섞이는 회의만 자동 감지로 두세요(한국어 문장 일부를 다른 언어로 잘못 적을 수 있습니다).</span></div>
                 <div class="row-control">
                   <select name="language" aria-label="언어">
                     <option value="ko-KR">한국어</option>
@@ -241,6 +241,10 @@
                     <option value="zh-CN">중국어</option>
                   </select>
                 </div>
+              </div>
+              <div class="row">
+                <div class="row-text"><span class="row-title">기록 다듬기</span><span class="hint">녹음이 끝나고 정리할 때 "음", "어", "um" 같은 군말과 바로 반복한 말을 기록에서 지웁니다. 끄면 들린 그대로 남깁니다.</span></div>
+                <div class="row-control"><input name="recordFillers" type="checkbox" class="switch" aria-label="기록 다듬기"></div>
               </div>
               <div class="row">
                 <div class="row-text"><span class="row-title">외국어 번역</span><span class="hint">녹음이 끝나고 정리할 때 외국어로 한 말 아래에 한국어 번역을 붙입니다. voin 내장 모델(Gemma 4 E4B·Qwen3.5 9B·Gemma 4 12B)로 이 맥 안에서 번역합니다.</span></div>

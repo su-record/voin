@@ -56,3 +56,10 @@ test("받아쓰기 후처리: 사전 → 군말", () => {
   assert.equal(cleanupDictation("음 지피티 지피티한테 물어봐", { dictionary: d }), "GPT GPT한테 물어봐");
   assert.equal(cleanupDictation("음 지피티", { dictionary: d, removeFillers: false }), "음 GPT");
 });
+
+test("회의 기록 군말 지우기: 기록 줄의 말만 다듬고 나머지(제목·요약·번역)는 그대로", async () => {
+  const { removeRecordFillers } = await import("../lib/text-cleanup.mjs");
+  const record = ["# 회의", "- 음, 요약 줄", "", "[00:00:01] **화자 1**: 음, 그 그 일정은 다음 주로 하죠.", "↳ 번역", "[00:00:05] **화자 2**: um, sounds good."].join("\n");
+  const out = removeRecordFillers(record);
+  assert.equal(out, ["# 회의", "- 음, 요약 줄", "", "[00:00:01] **화자 1**: 그 일정은 다음 주로 하죠.", "↳ 번역", "[00:00:05] **화자 2**: sounds good."].join("\n"));
+});
