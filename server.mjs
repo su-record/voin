@@ -14,6 +14,7 @@ import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
 import { getLang, pickLang, setLang, t } from "./lib/i18n.mjs";
+import { verifyKey } from "./lib/license.mjs";
 import { isLocalRequest } from "./lib/request-guard.mjs";
 import { numbersWarning, uncheckedNumbers } from "./lib/summary-check.mjs";
 import { applyDictionary, dictionaryTerms, removeFillers, removeRecordFillers } from "./lib/text-cleanup.mjs";
@@ -870,6 +871,13 @@ async function handleApi(req, res, url) {
     return json(200, { settings, vaults: obsidianVaults(), diarizationReady, appVersion: APP_VERSION, saveDir: currentDir });
   }
   if (route === "GET /api/model") return json(200, activeState);
+  // 허용 키 상태 (키 자체는 돌려주지 않는다)
+  if (route === "GET /api/license") {
+    const key = loadSettings().accessKey;
+    if (!key) return json(200, { state: "none" });
+    const r = verifyKey(key);
+    return json(200, r.ok ? { state: "ok", ...r.payload } : { state: r.reason, expires: r.payload?.expires ?? null });
+  }
   if (route === "GET /api/status") {
     const live = activeMeeting && !activeMeeting.closing ? activeMeeting : null;
     return json(200, { recording: Boolean(live), startedAt: live?.startedAt ?? null, processing: job, model: activeState });
