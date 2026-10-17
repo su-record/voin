@@ -230,6 +230,9 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--li
 /* 지우기: macOS 검색칸의 지우기처럼 늘 보이는 회색 ⓧ (호버 효과 없음) */
 .folder-list .folder-row button.remove-folder { width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; margin-right: 2px; border: none; background: none; box-shadow: none; font-size: 15px; line-height: 1; color: var(--faint); }
 .folder-list .folder-row button.remove-folder:hover:not(:disabled) { background: none; color: var(--muted); }
+.folder-list .folder-row button.rename-folder { width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border: none; background: none; box-shadow: none; font-size: 14px; color: var(--faint); }
+.folder-list .folder-row button.rename-folder:hover { color: var(--muted); }
+.folder-list .alias-input { font: inherit; font-weight: 600; width: 100%; padding: 2px 6px; border-radius: 6px; }
 .folder-list .folder-row button.pick-folder:hover:not(:disabled) { background: none; }
 .folder-path { display: flex; gap: 6px; margin-top: 6px; }
 .folder-path input { flex: 1; min-width: 0; }

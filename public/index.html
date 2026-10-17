@@ -341,8 +341,14 @@
                 </div>
               </div>
               <div class="row">
-                <div class="row-text"><span class="row-title">답변 소리로 듣기</span><span class="hint">답의 첫 문장을 맥 음성으로 읽어 줍니다.</span></div>
-                <div class="row-control"><input name="agentSpeak" type="checkbox" class="switch" aria-label="답변 소리로 듣기"></div>
+                <div class="row-text"><span class="row-title">음성 안내</span><span class="hint">작업 답을 맥 음성으로 읽어 줍니다. 어느 쪽이든 답은 화면에도 글로 나옵니다.</span></div>
+                <div class="row-control">
+                  <select name="agentSpeak" aria-label="음성 안내">
+                    <option value="off">끔</option>
+                    <option value="first">첫 문장만</option>
+                    <option value="full">답 전체</option>
+                  </select>
+                </div>
               </div>
               <div class="row" data-mac-only>
                 <div class="row-text"><span class="row-title">말하기 단축키</span><span class="hint">다른 앱을 쓰는 중에도 누르면 듣기 시작, 말이 멈추면 자동으로 보냅니다.</span></div>

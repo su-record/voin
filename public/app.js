@@ -1,4 +1,5 @@
 import { getLang, pickLang, setLang, t, translateDom } from "/shared/i18n.mjs";
+import { matchFolder } from "/shared/folder-voice.mjs";
 import { dictionaryToText, parseDictionaryText } from "/shared/text-cleanup.mjs";
 
 // 화면 언어: 시스템 언어(한·영·일, 아니면 영어). 고정된 화면 글은 여기서 한 번 바꾸고, 코드에서 만드는 글은 t()로
@@ -1782,10 +1783,11 @@ function showAgent() {
 }
 
 function renderAgentTarget() {
-  const folder = settings?.agentFolder ? settings.agentFolder.split("/").filter(Boolean).at(-1) : t("작업 폴더를 고르세요");
+  const alias = settings?.agentFolderAliases?.[settings?.agentFolder];
+  const folder = settings?.agentFolder ? alias || settings.agentFolder.split("/").filter(Boolean).at(-1) : t("작업 폴더를 고르세요");
   $("agentTarget").textContent = `${ENGINE_NAMES[settings?.agentEngine] ?? "Codex"} · ${folder}`;
 }
-$("agentTarget").onclick = () => !agentBusy && !dictating && openFolderPicker();
+$("agentTarget").onclick = () => !agentBusy && openFolderPicker();
 
 function agentLine(role, text) {
   const log = $("agentLog");
@@ -2022,7 +2024,6 @@ let dictationMode = "agent";
 async function startDictation(mode = "agent") {
   if (dictating || recording) return;
   if (model.state !== "ready") return;
-  if (mode === "agent" && !settings?.agentFolder) return openFolderPicker();
   try {
     dictation = await openMic();
   } catch (error) {
@@ -2061,21 +2062,29 @@ function stopDictation({ cancel = false, ended = false } = {}) {
 }
 
 // 작업 버튼: 먼저 작업 폴더를 고르고, 고르면 바로 듣기 시작. 듣는 중이면 끝, 폴더 목록이 열려 있으면 닫기
+// 작업 버튼: 바로 마이크를 켜고 지금 폴더의 대화를 연다. 작업 폴더가 없으면 마이크를 켠 채로 폴더 지정 창을 띄운다
+// (폴더는 말로도 고를 수 있다: "보인 폴더로 바꿔", "보인에서 테스트 돌려 줘")
 $("workButton").onclick = () => {
   if (dictating) return stopDictation();
   if (recording) return;
-  if (!$("folderView").hidden) return showView(null);
-  openFolderPicker();
+  startAgentTalk();
 };
+async function startAgentTalk() {
+  const data = await api("/api/agent/folders");
+  folderItems = data.folders;
+  if (!data.folders.length || !settings?.agentFolder) openFolderPicker(data);
+  else showAgent();
+  startDictation("agent");
+}
 
 // ───────── 작업 폴더 고르기 ─────────
 // 폴더 목록은 사용자가 × 로 뺄 때까지 남는다. 고른 폴더가 맨 위로 올라가 다음에 Enter·⌥V로 바로 쓸 수 있다
 let folderItems = [];
-async function openFolderPicker() {
+async function openFolderPicker(data) {
   showView("folderView");
   renderFolderEngine();
   $("folderPathForm").hidden = true;
-  await renderFolders(await api("/api/agent/folders"));
+  renderFolders(data ?? (await api("/api/agent/folders")));
 }
 
 // 폴더와 함께 일할 도구도 여기서 고른다 (설정의 "작업 도구"와 같은 값). 이 맥에 설치·로그인된 것만 고를 수 있다.
@@ -2137,9 +2146,17 @@ function renderFolders({ folders, current, home }) {
       pick.disabled = !f.exists;
       const text = el("span", "folder-text");
       const where = home && f.path.startsWith(home) ? `~${f.path.slice(home.length)}` : f.path;
-      text.append(el("span", "item-title", f.name), el("span", "item-meta", f.exists ? `${where} · ${ago(f.lastAt)}` : `${where} · ${t("폴더를 찾을 수 없음")}`));
+      // 별칭이 있으면 별칭을 크게, 폴더 이름은 아래에 (말로 고를 때도 별칭·이름으로 부른다)
+      const title = el("span", "item-title", f.alias || f.name);
+      const meta = f.alias ? `${f.name} · ${where}` : where;
+      text.append(title, el("span", "item-meta", f.exists ? `${meta} · ${ago(f.lastAt)}` : `${meta} · ${t("폴더를 찾을 수 없음")}`));
       pick.append(el("span", "folder-key", i < 9 ? String(i + 1) : ""), text);
       pick.onclick = () => chooseFolder(f.path);
+      const rename = el("button", "rename-folder", "✎");
+      rename.type = "button";
+      rename.title = t("별칭 바꾸기");
+      rename.setAttribute("aria-label", t("{name} 별칭 바꾸기", { name: f.alias || f.name }));
+      rename.onclick = () => editAlias(f, title);
       const remove = el("button", "remove-folder");
       const x = sfSymbols["xmark.circle.fill@14"];
       remove.append(x ? sfIcon(x) : "ⓧ");
@@ -2147,10 +2164,66 @@ function renderFolders({ folders, current, home }) {
       remove.title = t("목록에서 빼기 (폴더와 파일은 그대로)");
       remove.setAttribute("aria-label", t("{name} 목록에서 빼기", { name: f.name }));
       remove.onclick = async () => renderFolders(await api("/api/agent/folders", { method: "POST", body: JSON.stringify({ remove: f.path }) }));
-      row.append(pick, remove);
+      row.append(pick, rename, remove);
       return row;
     }),
   );
+}
+
+// 별칭 고치기: 제목 자리에 입력칸을 띄우고 Enter·바깥 누르기로 저장 (비우면 별칭 없음)
+function editAlias(folder, title) {
+  const input = el("input", "alias-input");
+  input.type = "text";
+  input.value = folder.alias;
+  input.placeholder = folder.name;
+  input.setAttribute("aria-label", t("별칭"));
+  let done = false;
+  const save = async () => {
+    if (done) return;
+    done = true;
+    renderFolders(await api("/api/agent/folders", { method: "POST", body: JSON.stringify({ alias: { path: folder.path, name: input.value } }) }));
+  };
+  input.onkeydown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") save();
+    if (e.key === "Escape") ((done = true), openFolderPicker());
+  };
+  input.onblur = save;
+  input.onclick = (e) => e.stopPropagation();
+  title.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+// 받아쓴 작업 말: 맨 앞이 폴더 별칭·이름이면 그 폴더로 바꾸고, 이어지는 말이 있으면 그 말을 보낸다
+async function handleSpokenTask(text) {
+  if (!folderItems.length) folderItems = (await api("/api/agent/folders")).folders;
+  const hit = matchFolder(text, folderItems.filter((f) => f.exists));
+  if (hit) {
+    const folder = folderItems.find((f) => f.path === hit.path);
+    if (hit.path !== settings.agentFolder) {
+      try {
+        const result = await api("/api/agent/folders", { method: "POST", body: JSON.stringify({ select: hit.path }) });
+        settings = { ...settings, agentFolder: result.current };
+        folderItems = result.folders;
+      } catch (error) {
+        barNote = error.message;
+        return renderBar();
+      }
+      agentLoaded = false;
+      showAgent();
+    }
+    if (!hit.rest) {
+      barNote = t("작업 폴더: {name}", { name: folder.alias || folder.name });
+      return renderBar();
+    }
+    text = hit.rest;
+  }
+  if (!settings.agentFolder) {
+    barNote = t("작업 폴더를 먼저 고르세요 (목록에서 누르거나 말로 이름을 부르세요)");
+    return renderBar();
+  }
+  sendAgent(text);
 }
 
 // 폴더를 고르면 그 폴더의 대화를 열고 바로 듣기 시작한다
@@ -2202,7 +2275,7 @@ function handleDictation(m) {
   if (m.type === "dictation") {
     heardText = null;
     if (m.mode === "paste") pasteText(m.text);
-    else sendAgent(m.text);
+    else handleSpokenTask(m.text);
   }
   if (m.type === "dictate-end") {
     stopDictation({ ended: true });
@@ -2214,7 +2287,7 @@ function handleDictation(m) {
 // 맥 앱 단축키(⌥V)·메뉴: 막대에서 바로 듣기
 function agentTalk() {
   if (recording) return;
-  dictating ? stopDictation() : startDictation("agent");
+  dictating ? stopDictation() : startAgentTalk();
 }
 
 // 맥 앱 단축키(⌥D): 누르면 듣기, 다시 누르면 받아써서 지금 앱에 붙여넣기
