@@ -51,8 +51,16 @@ import { SourceTranscriber } from "./lib/transcriber.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4310);
-// 화면 언어: 맥 앱이 시스템 언어를 VOIN_LANG으로 넘긴다 (개발 중에는 이 맥의 로캘)
-setLang(pickLang([process.env.VOIN_LANG, Intl.DateTimeFormat().resolvedOptions().locale].filter(Boolean)));
+// 화면 언어: 맥 앱이 시스템 언어를 VOIN_LANG으로 넘긴다. 앱 없이 띄웠으면(개발 중) 맥 시스템 설정의 언어 목록을 읽는다
+// (터미널의 로캘은 시스템 언어와 다를 수 있어 화면과 서버 글이 섞인다)
+function systemLanguages() {
+  try {
+    return execFileSync("/usr/bin/defaults", ["read", "-g", "AppleLanguages"], { encoding: "utf8" }).match(/[\w-]+/g) ?? [];
+  } catch {
+    return [Intl.DateTimeFormat().resolvedOptions().locale];
+  }
+}
+setLang(pickLang(process.env.VOIN_LANG ? [process.env.VOIN_LANG] : systemLanguages()));
 const PUBLIC_DIR = path.join(ROOT, "public");
 const MODELS_DIR = path.join(ROOT, "models");
 const TMP_DIR = path.join(DATA_DIR, "tmp");
