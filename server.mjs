@@ -13,6 +13,7 @@ import { WebSocketServer } from "ws";
 import { SAMPLE_RATE, WavWriter, convertToWav, readWav } from "./lib/audio.mjs";
 import { MeetingRecord, copyToTeamFolder, renameSpeaker, setSummary, transcriptOf } from "./lib/meeting-record.mjs";
 import { linkRecord } from "./lib/obsidian-links.mjs";
+import { getLang, pickLang, setLang, t } from "./lib/i18n.mjs";
 import { isLocalRequest } from "./lib/request-guard.mjs";
 import { numbersWarning, uncheckedNumbers } from "./lib/summary-check.mjs";
 import { applyDictionary, dictionaryTerms, removeFillers, removeRecordFillers } from "./lib/text-cleanup.mjs";
@@ -50,6 +51,8 @@ import { SourceTranscriber } from "./lib/transcriber.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4310);
+// 화면 언어: 맥 앱이 시스템 언어를 VOIN_LANG으로 넘긴다 (개발 중에는 이 맥의 로캘)
+setLang(pickLang([process.env.VOIN_LANG, Intl.DateTimeFormat().resolvedOptions().locale].filter(Boolean)));
 const PUBLIC_DIR = path.join(ROOT, "public");
 const MODELS_DIR = path.join(ROOT, "models");
 const TMP_DIR = path.join(DATA_DIR, "tmp");
@@ -132,7 +135,7 @@ class LiveMeeting {
       if (this.systemProcess && this.systemReceived && !this.systemHasSound) {
         this.send({
           type: "warning",
-          message: "화상회의 소리가 무음으로만 들어옵니다. 시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음에서 'voin' 앱(터미널에서 실행했다면 그 터미널 앱)을 허용하세요.",
+          message: t("화상회의 소리가 무음으로만 들어옵니다. 시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음에서 'voin' 앱(터미널에서 실행했다면 그 터미널 앱)을 허용하세요."),
         });
       }
     }, 15000);
@@ -155,7 +158,7 @@ class LiveMeeting {
     child.on("exit", (code) => {
       clearTimeout(silentCheck);
       if (this.systemProcess === child && code !== 0) {
-        this.send({ type: "warning", message: `화상회의 소리 녹음이 중단되었습니다 (syscap 종료 코드 ${code}). 마이크 받아쓰기는 계속됩니다.` });
+        this.send({ type: "warning", message: t("화상회의 소리 녹음이 중단되었습니다 (syscap 종료 코드 {code}). 마이크 받아쓰기는 계속됩니다.", { code }) });
       }
       this.systemProcess = null;
     });
@@ -226,12 +229,12 @@ function offsetFromTimeline(timeline, sample) {
 // 설정에서 켰으면 외국어 줄 아래에 한국어 번역을 붙인다. 실패하면 경고 글을 돌려준다(기록은 그대로).
 async function translateFile(filePath, settings, onProgress) {
   if (!settings.translateForeign) return undefined;
-  onProgress("외국어 번역 중…");
+  onProgress(t("외국어 번역 중…"));
   try {
     await translateRecord(filePath, (text) => translateLocal(text, settings.summaryModels.voin));
   } catch (error) {
     console.error("번역 실패:", error);
-    return `번역하지 못했습니다: ${error.message}`;
+    return t("번역하지 못했습니다: {message}", { message: error.message });
   }
 }
 
@@ -243,12 +246,12 @@ async function summarizeFile(filePath, onProgress, { required = false } = {}) {
   const provider = await pickProvider(setting, options);
   if (!provider) {
     return required || setting !== "auto"
-      ? "요약하지 못했습니다: 쓸 수 있는 요약 방법이 없습니다. 설정 → 요약에서 확인하세요."
+      ? t("요약하지 못했습니다: 쓸 수 있는 요약 방법이 없습니다. 설정 → 요약에서 확인하세요.")
       : undefined;
   }
   const transcript = transcriptOf(filePath);
   if (!transcript.trim()) return undefined;
-  onProgress(`요약 중 (${provider.name})…`);
+  onProgress(t("요약 중 ({name})…", { name: provider.name }));
   try {
     const { text, by } = await summarize(provider, transcript, { ...options, model: settings.summaryModels[provider.id] });
     // 요약의 날짜·숫자가 기록에 없으면 요약 아래에 경고를 붙인다 (작은 모델이 날짜를 잘못 옮기는 일이 있다)
@@ -257,7 +260,7 @@ async function summarizeFile(filePath, onProgress, { required = false } = {}) {
     console.log(`${new Date().toLocaleString("ko-KR")} 요약 완료: ${path.basename(filePath)} (${by})`);
   } catch (error) {
     console.error("요약 실패:", error);
-    return `${error.message} 받아쓴 기록은 저장되었습니다.`;
+    return t("{message} 받아쓴 기록은 저장되었습니다.", { message: error.message });
   }
 }
 
@@ -270,7 +273,7 @@ async function suggestNames(filePath, onProgress, { required = false } = {}) {
   const options = { customUrl: settings.summaryCustomUrl };
   const provider = await pickProvider(setting, options);
   if (!provider) return;
-  onProgress(`화자 이름 후보 찾는 중 (${provider.name})…`);
+  onProgress(t("화자 이름 후보 찾는 중 ({name})…", { name: provider.name }));
   try {
     const found = await suggestSpeakerNames(provider, transcript, { ...options, model: settings.summaryModels[provider.id] });
     saveNameSuggestions(path.basename(filePath, ".md"), found);
@@ -339,36 +342,36 @@ async function resumePendingMeetings() {
         transcribe: (_, pcm) => transcribeText(pcm, settings.language),
         toOffsetMs: (source, sample) => offsetFromTimeline(source === "system" ? pending.systemTimeline ?? [] : [], sample),
         onProgress: (message) => {
-          job = `중단된 녹음 ${label} 정리 중 · ${message}`;
+          job = t("중단된 녹음 {label} 정리 중 · {message}", { label, message });
           broadcast({ type: "recovery-progress", message: job });
         },
       });
       fs.rmSync(jobFile, { force: true });
       if (record.discarded) {
-        broadcast({ type: "recovery-done", file: null, message: `중단된 녹음 ${label}은 받아쓴 말이 없어 남기지 않았습니다.` });
+        broadcast({ type: "recovery-done", file: null, message: t("중단된 녹음 {label}은 받아쓴 말이 없어 남기지 않았습니다.", { label }) });
         continue;
       }
       const summaryWarning = await completeRecord(record.filePath, (message) => {
-        job = `중단된 녹음 ${label} 정리 중 · ${message}`;
+        job = t("중단된 녹음 {label} 정리 중 · {message}", { label, message });
         broadcast({ type: "recovery-progress", message: job });
       });
       broadcast({
         type: "recovery-done",
         file: record.fileName,
         warning: [warning, summaryWarning].filter(Boolean).join(" ") || undefined,
-        message: `중단된 녹음 ${label} 정리를 마쳤습니다.`,
+        message: t("중단된 녹음 {label} 정리를 마쳤습니다.", { label }),
       });
     }
   } catch (error) {
     console.error("중단된 녹음 정리 실패:", error);
-    broadcast({ type: "recovery-error", message: `중단된 녹음을 정리하지 못했습니다: ${error.message}` });
+    broadcast({ type: "recovery-error", message: t("중단된 녹음을 정리하지 못했습니다: {message}", { message: error.message }) });
   } finally {
     job = null;
     recoveryRunning = false;
   }
 }
 
-const EMPTY_RECORDING = "받아쓴 말이 없어 기록을 남기지 않았습니다.";
+const EMPTY_RECORDING = t("받아쓴 말이 없어 기록을 남기지 않았습니다.");
 
 // ───────── 지금 상황 알아채기 ─────────
 // 화면의 상태 줄(마이크·출력·회의 앱)에 쓴다. 이어폰 없이 스피커로 들으면 상대방 말이 마이크로 다시 들어와 두 번 기록된다.
@@ -407,12 +410,12 @@ const agent = createAgent({
   emit: (message) => {
     if (message.type === "agent-start") {
       agentAnswer = "";
-      job = "작업 중…";
+      job = t("작업 중…");
     }
     if (message.type === "agent-delta") agentAnswer += message.text;
     if (message.type === "agent-done") {
       job = null;
-      speak(message.error ? "작업이 실패했어요." : spokenAnswer(agentAnswer || message.text));
+      speak(message.error ? t("작업이 실패했어요.") : spokenAnswer(agentAnswer || message.text));
     }
     broadcast(message);
   },
@@ -448,7 +451,9 @@ const yourTurn = () => {
 function speak(text) {
   if (!text || !loadSettings().agentSpeak) return yourTurn();
   speaking?.kill();
-  const me = spawn("/usr/bin/say", ["-v", "Yuna", text], { stdio: "ignore" });
+  // 화면 언어에 맞는 맥 기본 목소리 (파일 저장이 아니라 바로 읽어서 어느 목소리든 된다)
+  const voice = { ko: "Yuna", ja: "Kyoko", en: "Samantha" }[getLang()];
+  const me = spawn("/usr/bin/say", ["-v", voice, text], { stdio: "ignore" });
   speaking = me;
   me.on("exit", (code, signal) => signal !== "SIGTERM" && speaking === me && yourTurn());
 }
@@ -470,7 +475,7 @@ class Dictation {
     // 작업 중이거나 답을 읽는 동안은 기다리는 시간으로 치지 않는다
     this.idleTimer = setInterval(() => {
       if (agent.busy || (speaking && speaking.exitCode === null)) this.lastVoiceAt = Date.now();
-      else if (Date.now() - this.lastVoiceAt > DICTATION_IDLE_MS) this.finish("2분 동안 말이 없어 듣기를 멈췄습니다.");
+      else if (Date.now() - this.lastVoiceAt > DICTATION_IDLE_MS) this.finish(t("2분 동안 말이 없어 듣기를 멈췄습니다."));
     }, 5000);
     this.resetSegment();
   }
@@ -639,7 +644,7 @@ async function loadActiveModel() {
     resumePendingMeetings();
   } catch (error) {
     console.error("모델 로드 실패:", error);
-    setActiveState({ state: "error", message: `모델을 불러오지 못했습니다: ${error.message}`, canDownload: found.source === "downloaded" });
+    setActiveState({ state: "error", message: t("모델을 불러오지 못했습니다: {message}", { message: error.message }), canDownload: found.source === "downloaded" });
   }
 }
 
@@ -724,8 +729,8 @@ function modelsPayload() {
 
 function modelNotReady() {
   if (activeState.state === "ready") return null;
-  if (activeState.state === "loading") return "받아쓰기 모델을 불러오는 중입니다. 잠시 후 다시 시도하세요.";
-  return "받아쓰기 모델이 아직 없습니다. 화면 위쪽에서 모델을 내려받으세요.";
+  if (activeState.state === "loading") return t("받아쓰기 모델을 불러오는 중입니다. 잠시 후 다시 시도하세요.");
+  return t("받아쓰기 모델이 아직 없습니다. 설정 → 받아쓰기 모델에서 내려받으세요.");
 }
 
 async function runImport({ inputFile, originalName, title }) {
@@ -736,7 +741,7 @@ async function runImport({ inputFile, originalName, title }) {
     broadcast({ type: "import-progress", message });
   };
   try {
-    progress("파일 변환 중…");
+    progress(t("파일 변환 중…"));
     await convertToWav(inputFile, wavFile);
     const samples = readWav(wavFile);
     const startedAt = Date.now();
@@ -756,7 +761,7 @@ async function runImport({ inputFile, originalName, title }) {
       startedAt,
       onFinal: (line) => record.addLine(line),
     });
-    await transcriber.run(samples, (ratio) => progress(`받아쓰는 중… ${Math.round(ratio * 100)}%`));
+    await transcriber.run(samples, (ratio) => progress(t("받아쓰는 중… {percent}%", { percent: Math.round(ratio * 100) })));
     record.endedAt = startedAt + (samples.length * 1000) / SAMPLE_RATE;
     const warning = await record.finish({
       wavFiles: { file: wavFile },
@@ -764,7 +769,7 @@ async function runImport({ inputFile, originalName, title }) {
       onProgress: progress,
     });
     if (record.discarded) {
-      broadcast({ type: "import-done", file: null, warning: `'${originalName}'에서 받아쓴 말이 없어 기록을 남기지 않았습니다.` });
+      broadcast({ type: "import-done", file: null, warning: t("'{name}'에서 받아쓴 말이 없어 기록을 남기지 않았습니다.", { name: originalName }) });
       return;
     }
     const summaryWarning = await completeRecord(record.filePath, progress);
@@ -783,7 +788,7 @@ async function runImport({ inputFile, originalName, title }) {
 function meetingPath(fileParam) {
   const file = path.basename(decodeURIComponent(fileParam));
   const filePath = path.join(saveDir(loadSettings()), file);
-  if (!file.endsWith(".md") || !fs.existsSync(filePath)) throw Object.assign(new Error("기록을 찾을 수 없습니다"), { status: 404 });
+  if (!file.endsWith(".md") || !fs.existsSync(filePath)) throw Object.assign(new Error(t("기록을 찾을 수 없습니다")), { status: 404 });
   return filePath;
 }
 
@@ -856,7 +861,7 @@ async function handleApi(req, res, url) {
     return json(200, { recording: Boolean(live), startedAt: live?.startedAt ?? null, processing: job, model: activeState });
   }
   if (route === "POST /api/model/download") {
-    if (activeState.state === "ready" || activeState.state === "loading") return json(409, { error: "모델이 이미 있습니다." });
+    if (activeState.state === "ready" || activeState.state === "loading") return json(409, { error: t("모델이 이미 있습니다.") });
     startDownload(activeModelEntry(loadSettings()));
     return json(202, {});
   }
@@ -864,10 +869,10 @@ async function handleApi(req, res, url) {
   const modelRoute = url.pathname.match(/^\/api\/models\/([\w.-]+)\/(download|cancel|delete|use)$/);
   if (modelRoute && req.method === "POST") {
     const entry = findCatalogModel(modelRoute[1]);
-    if (!entry) return json(404, { error: "없는 모델입니다." });
+    if (!entry) return json(404, { error: t("없는 모델입니다.") });
     const action = modelRoute[2];
     if (action === "download") {
-      if (download && download.id !== entry.id) return json(409, { error: "다른 모델을 내려받는 중입니다. 끝난 뒤 다시 시도하세요." });
+      if (download && download.id !== entry.id) return json(409, { error: t("다른 모델을 내려받는 중입니다. 끝난 뒤 다시 시도하세요.") });
       startDownload(entry);
       return json(202, {});
     }
@@ -876,14 +881,14 @@ async function handleApi(req, res, url) {
       return json(200, {});
     }
     if (action === "delete") {
-      if (activeModelEntry(loadSettings()).id === entry.id) return json(409, { error: "지금 쓰는 모델은 지울 수 없습니다. 다른 모델을 먼저 고르세요." });
-      if (download?.id === entry.id) return json(409, { error: "내려받는 중입니다. 먼저 취소하세요." });
+      if (activeModelEntry(loadSettings()).id === entry.id) return json(409, { error: t("지금 쓰는 모델은 지울 수 없습니다. 다른 모델을 먼저 고르세요.") });
+      if (download?.id === entry.id) return json(409, { error: t("내려받는 중입니다. 먼저 취소하세요.") });
       deleteModel(entry);
       broadcast({ type: "models-changed" });
       return json(200, {});
     }
     // use: 녹음·불러오기·복구 중에는 모델을 바꾸지 않는다
-    if (busy || recoveryRunning) return json(409, { error: "녹음이나 정리가 끝난 뒤에 모델을 바꿀 수 있습니다." });
+    if (busy || recoveryRunning) return json(409, { error: t("녹음이나 정리가 끝난 뒤에 모델을 바꿀 수 있습니다.") });
     saveSettings({ asrModel: entry.id });
     await loadActiveModel();
     broadcast({ type: "models-changed" });
@@ -914,7 +919,7 @@ async function handleApi(req, res, url) {
 
   if (route === "POST /api/import") {
     if (modelNotReady()) return json(409, { error: modelNotReady() });
-    if (busy) return json(409, { error: busy === "meeting" ? "녹음 중에는 파일을 불러올 수 없습니다." : "다른 파일을 처리하는 중입니다." });
+    if (busy) return json(409, { error: busy === "meeting" ? t("녹음 중에는 파일을 불러올 수 없습니다.") : t("다른 파일을 처리하는 중입니다.") });
     busy = "import";
     fs.mkdirSync(TMP_DIR, { recursive: true });
     const originalName = path.basename(url.searchParams.get("name") || "녹음.m4a");
@@ -945,7 +950,7 @@ async function handleApi(req, res, url) {
       engines: [
         { id: "codex", ready: Boolean(cli("codex")?.ready), status: cli("codex")?.status },
         { id: "claude", ready: Boolean(cli("claude")?.ready), status: cli("claude")?.status },
-        { id: "grok", ready: grokInstalled && grokLoggedIn, status: !grokInstalled ? "설치 안 됨" : grokLoggedIn ? "설치됨 · 로그인됨" : "로그인 필요 — 터미널에서 'grok login'" },
+        { id: "grok", ready: grokInstalled && grokLoggedIn, status: !grokInstalled ? t("설치 안 됨") : grokLoggedIn ? t("설치됨 · 로그인됨") : t("로그인 필요 — 터미널에서 'grok login'") },
       ],
     });
   }
@@ -956,8 +961,8 @@ async function handleApi(req, res, url) {
       const { add, remove, select } = await readJson(req);
       const target = add ?? select;
       if (target !== undefined) {
-        if (agent.busy && target !== s.agentFolder) return json(409, { error: "작업이 끝난 뒤 폴더를 바꿀 수 있습니다." });
-        if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) return json(400, { error: "폴더를 찾을 수 없습니다." });
+        if (agent.busy && target !== s.agentFolder) return json(409, { error: t("작업이 끝난 뒤 폴더를 바꿀 수 있습니다.") });
+        if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) return json(400, { error: t("폴더를 찾을 수 없습니다.") });
         s = saveSettings({ agentFolder: target, agentFolders: [target, ...s.agentFolders.filter((f) => f !== target)] });
       }
       if (remove !== undefined) {
@@ -971,7 +976,7 @@ async function handleApi(req, res, url) {
   }
   if (route === "POST /api/agent/send") {
     const { text } = await readJson(req);
-    if (!String(text ?? "").trim()) return json(400, { error: "보낼 말이 없습니다." });
+    if (!String(text ?? "").trim()) return json(400, { error: t("보낼 말이 없습니다.") });
     // 작업 중이면 진행 중인 작업에 더하거나(Codex) 끝난 뒤 보낸다
     agent.add(String(text).trim(), loadSettings()).catch((error) => broadcast({ type: "warning", message: error.message }));
     return json(202, {});
@@ -981,7 +986,7 @@ async function handleApi(req, res, url) {
     return json(200, {});
   }
   if (route === "POST /api/agent/new") {
-    if (agent.busy) return json(409, { error: "작업 중에는 새 대화를 시작할 수 없습니다." });
+    if (agent.busy) return json(409, { error: t("작업 중에는 새 대화를 시작할 수 없습니다.") });
     agent.newConversation(loadSettings());
     return json(200, {});
   }
@@ -1036,10 +1041,10 @@ async function handleApi(req, res, url) {
   const llmRoute = url.pathname.match(/^\/api\/summary\/local-models\/([\w.-]+)\/(download|cancel|delete|use)$/);
   if (llmRoute && req.method === "POST") {
     const entry = findSummaryModel(llmRoute[1]);
-    if (!entry) return json(404, { error: "없는 모델입니다." });
+    if (!entry) return json(404, { error: t("없는 모델입니다.") });
     const action = llmRoute[2];
     if (action === "download") {
-      if (llmDownload && llmDownload.id !== entry.id) return json(409, { error: "다른 요약 모델을 내려받는 중입니다. 끝난 뒤 다시 시도하세요." });
+      if (llmDownload && llmDownload.id !== entry.id) return json(409, { error: t("다른 요약 모델을 내려받는 중입니다. 끝난 뒤 다시 시도하세요.") });
       startLlmDownload(entry);
       return json(202, {});
     }
@@ -1048,7 +1053,7 @@ async function handleApi(req, res, url) {
       return json(200, {});
     }
     if (action === "delete") {
-      if (llmDownload?.id === entry.id) return json(409, { error: "내려받는 중입니다. 먼저 취소하세요." });
+      if (llmDownload?.id === entry.id) return json(409, { error: t("내려받는 중입니다. 먼저 취소하세요.") });
       deleteModel(entry);
       if (loadSettings().summaryModels.voin === entry.id) saveSettings({ summaryModels: { voin: "" } }); // 고른 모델을 지우면 선택도 비운다
     } else saveSettings({ summaryModels: { voin: entry.id } });
@@ -1094,7 +1099,7 @@ async function handleApi(req, res, url) {
     }
     // 이름 후보만 다시 찾는다 (요약은 그대로)
     if (req.method === "POST" && match[2] === "suggest-names") {
-      if (summarizing.has(filePath)) return json(409, { error: "이미 처리하는 중입니다." });
+      if (summarizing.has(filePath)) return json(409, { error: t("이미 처리하는 중입니다.") });
       summarizing.add(filePath);
       json(202, {});
       const file = path.basename(filePath);
@@ -1103,7 +1108,7 @@ async function handleApi(req, res, url) {
         broadcast({ type: "summary-progress", file, message });
       };
       suggestNames(filePath, progress, { required: true })
-        .then(() => broadcast({ type: "summary-done", file, message: "이름 후보를 찾았습니다." }))
+        .then(() => broadcast({ type: "summary-done", file, message: t("이름 후보를 찾았습니다.") }))
         .finally(() => {
           summarizing.delete(filePath);
           if (!summarizing.size && !busy && !recoveryRunning) job = null;
@@ -1112,7 +1117,7 @@ async function handleApi(req, res, url) {
     }
     // 저장된 기록을 (다시) 요약한다. 오래 걸려 바로 202로 답하고 결과는 WebSocket으로 알린다
     if (req.method === "POST" && match[2] === "summarize") {
-      if (summarizing.has(filePath)) return json(409, { error: "이미 요약하는 중입니다." });
+      if (summarizing.has(filePath)) return json(409, { error: t("이미 요약하는 중입니다.") });
       summarizing.add(filePath);
       json(202, {});
       const file = path.basename(filePath);
@@ -1129,7 +1134,7 @@ async function handleApi(req, res, url) {
       return;
     }
   }
-  json(404, { error: "없는 API입니다" });
+  json(404, { error: t("없는 API입니다") });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1153,10 +1158,11 @@ const server = http.createServer(async (req, res) => {
     fs.createReadStream(file).pipe(res);
     return;
   }
-  // 화면과 서버가 같이 쓰는 순수 함수 (사전 글상자 파싱): 이 파일 하나만 내준다
-  if (url.pathname === "/shared/text-cleanup.mjs") {
+  // 화면과 서버가 같이 쓰는 모듈 (사전 글상자 파싱, 화면 언어): 이 파일들만 내준다
+  const shared = { "/shared/text-cleanup.mjs": "./lib/text-cleanup.mjs", "/shared/i18n.mjs": "./lib/i18n.mjs", "/shared/locales/en.mjs": "./lib/locales/en.mjs", "/shared/locales/ja.mjs": "./lib/locales/ja.mjs" };
+  if (url.pathname in shared) {
     res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
-    fs.createReadStream(new URL("./lib/text-cleanup.mjs", import.meta.url)).pipe(res);
+    fs.createReadStream(new URL(shared[url.pathname], import.meta.url)).pipe(res);
     return;
   }
   const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
@@ -1182,7 +1188,7 @@ wss.on("connection", (ws) => {
     if (!meeting) return;
     const current = meeting;
     meeting = null;
-    job = "저장하는 중…";
+    job = t("저장하는 중…");
     try {
       const warning = await current.stop();
       send({ type: "stopped", file: current.record.discarded ? null : current.fileName, warning });
@@ -1196,7 +1202,7 @@ wss.on("connection", (ws) => {
   let dictation = null;
   // 잘못된 메시지 하나로 서버(녹음 중인 회의 포함)가 꺼지지 않도록 오류는 화면에만 알린다
   ws.on("message", (data, isBinary) =>
-    handleMessage(data, isBinary).catch((error) => send({ type: "error", message: `요청을 처리하지 못했습니다: ${error.message}` })),
+    handleMessage(data, isBinary).catch((error) => send({ type: "error", message: t("요청을 처리하지 못했습니다: {message}", { message: error.message }) })),
   );
   async function handleMessage(data, isBinary) {
     if (isBinary) {
@@ -1209,7 +1215,7 @@ wss.on("connection", (ws) => {
     // 음성 작업 말하기: 녹음 중이 아닐 때만
     if (message.type === "dictate-start") {
       if (modelNotReady()) return send({ type: "error", message: modelNotReady() });
-      if (meeting) return send({ type: "error", message: "녹음 중에는 음성 작업을 할 수 없습니다." });
+      if (meeting) return send({ type: "error", message: t("녹음 중에는 음성 작업을 할 수 없습니다.") });
       dictation = new Dictation(send, loadSettings().language, message.mode === "paste" ? "paste" : "agent");
       return;
     }
@@ -1225,7 +1231,7 @@ wss.on("connection", (ws) => {
         return;
       }
       if (busy) {
-        send({ type: "error", message: busy === "meeting" ? "이미 다른 창에서 녹음 중입니다." : "녹음 파일을 처리하는 중입니다. 끝난 뒤 시작하세요." });
+        send({ type: "error", message: busy === "meeting" ? t("이미 다른 창에서 녹음 중입니다.") : t("녹음 파일을 처리하는 중입니다. 끝난 뒤 시작하세요.") });
         return;
       }
       try {
@@ -1235,10 +1241,10 @@ wss.on("connection", (ws) => {
         send({ type: "started", file: meeting.fileName });
       } catch (error) {
         meeting = activeMeeting = null;
-        send({ type: "error", message: `녹음을 시작하지 못했습니다: ${error.message}` });
+        send({ type: "error", message: t("녹음을 시작하지 못했습니다: {message}", { message: error.message }) });
       }
     } else if (message.type === "stop") {
-      await stopMeeting().catch((e) => send({ type: "error", message: `저장 중 오류: ${e.message}` }));
+      await stopMeeting().catch((e) => send({ type: "error", message: t("저장 중 오류: {message}", { message: e.message }) }));
     }
   }
 

@@ -7,6 +7,128 @@ import UniformTypeIdentifiers
 import WebKit
 
 let port = 4310
+
+// 화면 언어: 시스템 언어 중 한국어·일본어·영어 첫 번째, 없으면 영어 (lib/i18n.mjs pickLang과 같은 규칙)
+let appLang: String = Locale.preferredLanguages.lazy.map { String($0.prefix(2)).lowercased() }.first { ["ko", "ja", "en"].contains($0) } ?? "en"
+
+// 앱(메뉴·알림) 글: 한국어 원문 → 지금 언어. 사전에 없으면 원문
+func L(_ ko: String) -> String { appLang == "ko" ? ko : (L10N[appLang]?[ko] ?? ko) }
+// {name} 자리표시를 채운다: 예) "녹음 중 · {time}"에 ["time": "03:12"]
+func L(_ ko: String, _ vars: [String: String]) -> String {
+    vars.reduce(L(ko)) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) }
+}
+let L10N: [String: [String: String]] = [
+    "en": [
+        "모델을 불러오는 중입니다…": "Loading model…",
+        "처음 실행할 때 10초 정도 걸립니다.": "The first launch takes about 10 seconds.",
+        "서버를 시작하지 못했습니다": "Couldn't start the server",
+        "서버가 종료되었습니다": "The server quit",
+        "서버가 응답하지 않습니다": "The server isn't responding",
+        "자세한 내용: {path}": "Details: {path}",
+        "앱 리소스 폴더를 찾지 못했습니다.": "Couldn't find the app's resources folder.",
+        "앱 안의 서버 파일이 없습니다. 앱을 다시 설치하세요.": "The app's server files are missing. Please reinstall the app.",
+        "받아쓸 녹음 파일을 고르세요": "Choose a recording to transcribe",
+        "선택": "Choose",
+        "정리 중": "Processing",
+        "받아쓰기 모델 확인 중…": "Checking transcription model…",
+        "대기 중": "Ready",
+        "받아쓰기 모델 불러오는 중…": "Loading transcription model…",
+        "받은 파일 확인 중…": "Verifying downloaded files…",
+        "받아쓰기 모델 내려받는 중 {percent}%": "Downloading transcription model {percent}%",
+        "내려받기 취소": "Cancel download",
+        "받아쓰기 모델 내려받기 멈춤": "Transcription model download paused",
+        "받아쓰기 모델 없음": "No transcription model",
+        "받아쓰기 모델 이어 받기": "Resume transcription model download",
+        "받아쓰기 모델 내려받기 ({size}MB)": "Download transcription model ({size}MB)",
+        "받아쓰기 모델 문제 있음": "Transcription model problem",
+        "받아쓰기 모델 다시 받기": "Download transcription model again",
+        "녹음 중 · {time}": "Recording · {time}",
+        "저장하는 중…": "Saving…",
+        "녹음 중지": "Stop recording",
+        "녹음 시작": "Start recording",
+        "받아쓰기 모델": "Transcription model",
+        "말로 작업하기": "Voice task",
+        "아무 앱에 받아쓰기": "Dictate into any app",
+        "녹음 파일 불러오기…": "Import recording…",
+        "저장 폴더 열기": "Open save folder",
+        "voin 창 열기": "Open voin window",
+        "설정…": "Settings…",
+        "voin 종료": "Quit voin",
+        "voin에 관하여": "About voin",
+        "voin 숨기기": "Hide voin",
+        "파일": "File",
+        "새 회의 녹음": "New meeting recording",
+        "녹음 시작/중지": "Start/stop recording",
+        "창 닫기": "Close window",
+        "편집": "Edit",
+        "실행 취소": "Undo",
+        "잘라내기": "Cut",
+        "복사": "Copy",
+        "붙여넣기": "Paste",
+        "전체 선택": "Select all",
+        "지원하지 않는 키입니다.": "This key isn't supported.",
+        "지원하지 않는 수식키입니다.": "This modifier key isn't supported.",
+        "이미 다른 곳에서 쓰는 단축키입니다. 다른 조합을 고르세요.": "This shortcut is already in use elsewhere. Choose a different combination.",
+        "단축키를 등록하지 못했습니다 ({status}).": "Couldn't register the shortcut ({status}).",
+        "클립보드에 넣었습니다 · ⌘V로 붙여넣으세요 (자동 붙여넣기는 손쉬운 사용 권한에서 voin을 켜면 됩니다)": "Copied to clipboard · Press ⌘V to paste (to paste automatically, turn on voin in Accessibility permissions)",
+        "붙여넣었습니다": "Pasted",
+    ],
+    "ja": [
+        "모델을 불러오는 중입니다…": "モデルを読み込んでいます…",
+        "처음 실행할 때 10초 정도 걸립니다.": "初回の起動には10秒ほどかかります。",
+        "서버를 시작하지 못했습니다": "サーバーを起動できませんでした",
+        "서버가 종료되었습니다": "サーバーが終了しました",
+        "서버가 응답하지 않습니다": "サーバーが応答しません",
+        "자세한 내용: {path}": "詳細：{path}",
+        "앱 리소스 폴더를 찾지 못했습니다.": "アプリのリソースフォルダが見つかりませんでした。",
+        "앱 안의 서버 파일이 없습니다. 앱을 다시 설치하세요.": "アプリ内のサーバーファイルがありません。アプリを再インストールしてください。",
+        "받아쓸 녹음 파일을 고르세요": "文字起こしする録音ファイルを選んでください",
+        "선택": "選択",
+        "정리 중": "整理中",
+        "받아쓰기 모델 확인 중…": "文字起こしモデルを確認中…",
+        "대기 중": "待機中",
+        "받아쓰기 모델 불러오는 중…": "文字起こしモデルを読み込み中…",
+        "받은 파일 확인 중…": "ダウンロードしたファイルを確認中…",
+        "받아쓰기 모델 내려받는 중 {percent}%": "文字起こしモデルをダウンロード中 {percent}%",
+        "내려받기 취소": "ダウンロードをキャンセル",
+        "받아쓰기 모델 내려받기 멈춤": "文字起こしモデルのダウンロード一時停止",
+        "받아쓰기 모델 없음": "文字起こしモデルなし",
+        "받아쓰기 모델 이어 받기": "文字起こしモデルのダウンロードを再開",
+        "받아쓰기 모델 내려받기 ({size}MB)": "文字起こしモデルをダウンロード（{size}MB）",
+        "받아쓰기 모델 문제 있음": "文字起こしモデルに問題があります",
+        "받아쓰기 모델 다시 받기": "文字起こしモデルを再ダウンロード",
+        "녹음 중 · {time}": "録音中 · {time}",
+        "저장하는 중…": "保存中…",
+        "녹음 중지": "録音を停止",
+        "녹음 시작": "録音を開始",
+        "받아쓰기 모델": "文字起こしモデル",
+        "말로 작업하기": "音声タスク",
+        "아무 앱에 받아쓰기": "どのアプリにも口述入力",
+        "녹음 파일 불러오기…": "録音ファイルを読み込む…",
+        "저장 폴더 열기": "保存フォルダを開く",
+        "voin 창 열기": "voin ウインドウを開く",
+        "설정…": "設定…",
+        "voin 종료": "voin を終了",
+        "voin에 관하여": "voin について",
+        "voin 숨기기": "voin を隠す",
+        "파일": "ファイル",
+        "새 회의 녹음": "新しい会議を録音",
+        "녹음 시작/중지": "録音を開始/停止",
+        "창 닫기": "ウインドウを閉じる",
+        "편집": "編集",
+        "실행 취소": "取り消す",
+        "잘라내기": "カット",
+        "복사": "コピー",
+        "붙여넣기": "ペースト",
+        "전체 선택": "すべてを選択",
+        "지원하지 않는 키입니다.": "このキーには対応していません。",
+        "지원하지 않는 수식키입니다.": "この修飾キーには対応していません。",
+        "이미 다른 곳에서 쓰는 단축키입니다. 다른 조합을 고르세요.": "このショートカットはすでに他で使われています。別の組み合わせを選んでください。",
+        "단축키를 등록하지 못했습니다 ({status}).": "ショートカットを登録できませんでした（{status}）。",
+        "클립보드에 넣었습니다 · ⌘V로 붙여넣으세요 (자동 붙여넣기는 손쉬운 사용 권한에서 voin을 켜면 됩니다)": "クリップボードにコピーしました · ⌘V で貼り付けてください（自動で貼り付けるには、アクセシビリティの権限で voin をオンにしてください）",
+        "붙여넣었습니다": "貼り付けました",
+    ],
+]
 let appURL = URL(string: "http://localhost:\(port)")!
 
 // 서버(/api/status)가 알려 주는 상태: 메뉴 막대 아이콘과 메뉴가 이 값으로 그려진다.
@@ -131,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         agentKey.onPress = { [weak self] in self?.agentTalk() }
         dictateKey.onPress = { [weak self] in self?.dictate() }
 
-        showMessage("모델을 불러오는 중입니다…", detail: "처음 실행할 때 10초 정도 걸립니다.")
+        showMessage(L("모델을 불러오는 중입니다…"), detail: L("처음 실행할 때 10초 정도 걸립니다."))
         Task { await startServerAndLoad() }
     }
 
@@ -139,13 +261,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         // 터미널에서 npm start로 이미 띄워 둔 서버가 있으면 그대로 쓴다
         if await serverResponds() == false {
             do { try launchServer() } catch {
-                showMessage("서버를 시작하지 못했습니다", detail: error.localizedDescription)
+                showMessage(L("서버를 시작하지 못했습니다"), detail: error.localizedDescription)
                 return
             }
             for _ in 0..<120 {
                 if await serverResponds() { break }
                 if server?.isRunning == false {
-                    showMessage("서버가 종료되었습니다", detail: "자세한 내용: \(logURL.path)")
+                    showMessage(L("서버가 종료되었습니다"), detail: L("자세한 내용: {path}", ["path": logURL.path]))
                     return
                 }
                 try? await Task.sleep(nanoseconds: 500_000_000)
@@ -159,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
                 _ = webView.load(URLRequest(url: appURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
             }
         } else {
-            showMessage("서버가 응답하지 않습니다", detail: "자세한 내용: \(logURL.path)")
+            showMessage(L("서버가 응답하지 않습니다"), detail: L("자세한 내용: {path}", ["path": logURL.path]))
         }
     }
 
@@ -172,11 +294,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     func launchServer() throws {
         // 서버 코드와 Node.js는 앱 안에 함께 들어 있다 (Contents/Resources/app, Contents/Resources/bin/node)
-        guard let resources = Bundle.main.resourcePath else { throw AppError("앱 리소스 폴더를 찾지 못했습니다.") }
+        guard let resources = Bundle.main.resourcePath else { throw AppError(L("앱 리소스 폴더를 찾지 못했습니다.")) }
         let appDir = resources + "/app"
         let node = resources + "/bin/node"
         guard FileManager.default.fileExists(atPath: appDir + "/server.mjs"), FileManager.default.isExecutableFile(atPath: node)
-        else { throw AppError("앱 안의 서버 파일이 없습니다. 앱을 다시 설치하세요.") }
+        else { throw AppError(L("앱 안의 서버 파일이 없습니다. 앱을 다시 설치하세요.")) }
 
         // 로그는 실행할 때마다 지우지 않고 이어 쓴다 (문제가 난 회의의 기록이 남도록). 5MB가 넘으면 새로 시작한다.
         let size = (try? FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? Int) ?? 0
@@ -191,6 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         process.currentDirectoryURL = URL(fileURLWithPath: appDir)
         var env = ProcessInfo.processInfo.environment
         env["PORT"] = String(port)
+        env["VOIN_LANG"] = appLang // 서버가 보내는 안내·오류도 화면과 같은 언어로
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = env
         process.standardOutput = log
@@ -239,7 +362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio]
-        panel.message = "받아쓸 녹음 파일을 고르세요"
+        panel.message = L("받아쓸 녹음 파일을 고르세요")
         panel.beginSheetModal(for: window) { completionHandler($0 == .OK ? panel.urls : nil) }
     }
 
@@ -251,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "선택"
+        panel.prompt = L("선택")
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let path = panel.url?.path else { return }
             // 경로에 따옴표·한글이 있어도 안전하도록 JSON 배열로 넘긴다
@@ -479,25 +602,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         if let processing {
             // "화자별로 정리 중… (마이크) 45%"에서 숫자만 꺼내 짧게 보여 준다
             let percent = processing.range(of: #"\d+%"#, options: .regularExpression).map { " \(processing[$0])" } ?? ""
-            button.title = " 정리 중\(percent)"
+            button.title = " " + L("정리 중") + percent
         } else {
             button.title = elapsedText().map { " \($0)" } ?? ""
         }
     }
 
     func modelMenuText() -> (status: String, action: String?) {
-        guard let model = webState.model else { return ("받아쓰기 모델 확인 중…", nil) }
+        guard let model = webState.model else { return (L("받아쓰기 모델 확인 중…"), nil) }
         switch model.state {
-        case "ready": return ("대기 중", nil)
-        case "loading": return ("받아쓰기 모델 불러오는 중…", nil)
+        case "ready": return (L("대기 중"), nil)
+        case "loading": return (L("받아쓰기 모델 불러오는 중…"), nil)
         case "downloading":
-            if model.verifying == true { return ("받은 파일 확인 중…", nil) }
+            if model.verifying == true { return (L("받은 파일 확인 중…"), nil) }
             let percent = Int((model.received ?? 0) / max(model.total ?? 1, 1) * 100)
-            return ("받아쓰기 모델 내려받는 중 \(percent)%", "내려받기 취소")
+            return (L("받아쓰기 모델 내려받는 중 {percent}%", ["percent": "\(percent)"]), L("내려받기 취소"))
         case "missing":
-            return (model.paused == true ? "받아쓰기 모델 내려받기 멈춤" : "받아쓰기 모델 없음",
-                model.paused == true ? "받아쓰기 모델 이어 받기" : "받아쓰기 모델 내려받기 (\(model.sizeMB ?? 751)MB)")
-        default: return ("받아쓰기 모델 문제 있음", model.canDownload == true ? "받아쓰기 모델 다시 받기" : nil)
+            return (model.paused == true ? L("받아쓰기 모델 내려받기 멈춤") : L("받아쓰기 모델 없음"),
+                model.paused == true ? L("받아쓰기 모델 이어 받기") : L("받아쓰기 모델 내려받기 ({size}MB)", ["size": "\(model.sizeMB ?? 751)"]))
+        default: return (L("받아쓰기 모델 문제 있음"), model.canDownload == true ? L("받아쓰기 모델 다시 받기") : nil)
         }
     }
 
@@ -526,12 +649,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let (modelStatus, modelActionTitle) = modelMenuText()
-        let status = elapsedText().map { "녹음 중 · \($0)" } ?? webState.processing ?? (webState.busy ? "저장하는 중…" : modelStatus)
+        let status = elapsedText().map { L("녹음 중 · {time}", ["time": $0]) } ?? webState.processing ?? (webState.busy ? L("저장하는 중…") : modelStatus)
         let header = menu.addItem(withTitle: status, action: nil, keyEquivalent: "")
         header.isEnabled = false
 
         let ready = webState.model?.state == "ready" && !webState.busy
-        let record = menu.addItem(withTitle: webState.recording ? "녹음 중지" : "녹음 시작", action: #selector(toggleRecording), keyEquivalent: "")
+        let record = menu.addItem(withTitle: webState.recording ? L("녹음 중지") : L("녹음 시작"), action: #selector(toggleRecording), keyEquivalent: "")
         record.target = self
         record.isEnabled = webState.recording || ready
         HotKey.describe(hotkeyString, on: record)
@@ -541,7 +664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         // 받아 둔 모델끼리 바꾸기 (녹음 중에는 바꿀 수 없다)
         let installed = installedModels()
         if installed.count > 1 {
-            let item = menu.addItem(withTitle: "받아쓰기 모델", action: nil, keyEquivalent: "")
+            let item = menu.addItem(withTitle: L("받아쓰기 모델"), action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for model in installed {
                 let choice = sub.addItem(withTitle: model.name, action: #selector(useModel(_:)), keyEquivalent: "")
@@ -553,25 +676,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             item.submenu = sub
         }
         menu.addItem(.separator())
-        let talk = menu.addItem(withTitle: "말로 작업하기", action: #selector(agentTalk), keyEquivalent: "")
+        let talk = menu.addItem(withTitle: L("말로 작업하기"), action: #selector(agentTalk), keyEquivalent: "")
         talk.target = self
         talk.isEnabled = !webState.recording && webState.model?.state == "ready"
         HotKey.describe(agentKeyString, on: talk)
-        let dictateItem = menu.addItem(withTitle: "아무 앱에 받아쓰기", action: #selector(dictate), keyEquivalent: "")
+        let dictateItem = menu.addItem(withTitle: L("아무 앱에 받아쓰기"), action: #selector(dictate), keyEquivalent: "")
         dictateItem.target = self
         dictateItem.isEnabled = !webState.recording && webState.model?.state == "ready"
         HotKey.describe(dictateKeyString, on: dictateItem)
-        let importItem = menu.addItem(withTitle: "녹음 파일 불러오기…", action: #selector(importFile), keyEquivalent: "")
+        let importItem = menu.addItem(withTitle: L("녹음 파일 불러오기…"), action: #selector(importFile), keyEquivalent: "")
         importItem.target = self
         importItem.isEnabled = ready && !webState.recording
-        menu.addItem(withTitle: "저장 폴더 열기", action: #selector(openFolder), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("저장 폴더 열기"), action: #selector(openFolder), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "voin 창 열기", action: #selector(showWindow), keyEquivalent: "").target = self
-        let settings = menu.addItem(withTitle: "설정…", action: #selector(openSettings), keyEquivalent: "")
+        menu.addItem(withTitle: L("voin 창 열기"), action: #selector(showWindow), keyEquivalent: "").target = self
+        let settings = menu.addItem(withTitle: L("설정…"), action: #selector(openSettings), keyEquivalent: "")
         settings.target = self
         settings.isEnabled = !webState.recording
         menu.addItem(.separator())
-        menu.addItem(withTitle: "voin 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L("voin 종료"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
     }
 
     // 메뉴 막대와 단축키를 계속 쓸 수 있도록, 창을 닫아도 앱은 끝나지 않는다. Dock 아이콘을 누르면 창이 다시 열린다.
@@ -598,32 +721,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "voin에 관하여", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: L("voin에 관하여"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "설정…", action: #selector(openSettings), keyEquivalent: ",")
+        appMenu.addItem(withTitle: L("설정…"), action: #selector(openSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "voin 숨기기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "voin 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L("voin 숨기기"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: L("voin 종료"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         let fileItem = NSMenuItem()
         main.addItem(fileItem)
-        let fileMenu = NSMenu(title: "파일")
-        fileMenu.addItem(withTitle: "새 회의 녹음", action: #selector(newMeeting), keyEquivalent: "n")
-        fileMenu.addItem(withTitle: "녹음 파일 불러오기…", action: #selector(importFile), keyEquivalent: "o")
-        fileMenu.addItem(withTitle: "녹음 시작/중지", action: #selector(toggleRecording), keyEquivalent: "r")
-        fileMenu.addItem(withTitle: "말로 작업하기", action: #selector(agentTalk), keyEquivalent: "")
+        let fileMenu = NSMenu(title: L("파일"))
+        fileMenu.addItem(withTitle: L("새 회의 녹음"), action: #selector(newMeeting), keyEquivalent: "n")
+        fileMenu.addItem(withTitle: L("녹음 파일 불러오기…"), action: #selector(importFile), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: L("녹음 시작/중지"), action: #selector(toggleRecording), keyEquivalent: "r")
+        fileMenu.addItem(withTitle: L("말로 작업하기"), action: #selector(agentTalk), keyEquivalent: "")
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileMenu.addItem(withTitle: L("창 닫기"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileItem.submenu = fileMenu
         // 복사/붙여넣기 단축키가 웹 화면에서 동작하려면 편집 메뉴가 필요하다
         let editItem = NSMenuItem()
         main.addItem(editItem)
-        let editMenu = NSMenu(title: "편집")
-        editMenu.addItem(withTitle: "실행 취소", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "잘라내기", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "복사", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "전체 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editMenu = NSMenu(title: L("편집"))
+        editMenu.addItem(withTitle: L("실행 취소"), action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: L("잘라내기"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L("복사"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L("붙여넣기"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L("전체 선택"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
         NSApp.mainMenu = main
     }
@@ -664,7 +787,7 @@ final class HotKey {
         ref = nil
         guard !text.isEmpty else { return nil }
         var parts = text.split(separator: "+").map(String.init)
-        guard let code = parts.popLast(), let keyCode = Self.keyCodes[code] else { return "지원하지 않는 키입니다." }
+        guard let code = parts.popLast(), let keyCode = Self.keyCodes[code] else { return L("지원하지 않는 키입니다.") }
         var modifiers = 0
         for part in parts {
             switch part {
@@ -672,7 +795,7 @@ final class HotKey {
             case "alt": modifiers |= optionKey
             case "ctrl": modifiers |= controlKey
             case "shift": modifiers |= shiftKey
-            default: return "지원하지 않는 수식키입니다."
+            default: return L("지원하지 않는 수식키입니다.")
             }
         }
         Self.installHandler()
@@ -680,7 +803,7 @@ final class HotKey {
         let hotKeyID = EventHotKeyID(signature: OSType(0x4D4E_4F54), id: id) // 'MNOT'
         let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), hotKeyID, GetApplicationEventTarget(), 0, &ref)
         if status == noErr { return nil }
-        return status == eventHotKeyExistsErr ? "이미 다른 곳에서 쓰는 단축키입니다. 다른 조합을 고르세요." : "단축키를 등록하지 못했습니다 (\(status))."
+        return status == eventHotKeyExistsErr ? L("이미 다른 곳에서 쓰는 단축키입니다. 다른 조합을 고르세요.") : L("단축키를 등록하지 못했습니다 ({status}).", ["status": "\(status)"])
     }
 
     private static func installHandler() {
@@ -740,7 +863,7 @@ final class MacPaster: TextPaster {
             board.clearContents()
             board.setString(text, forType: .string)
             prepare()
-            return (false, "클립보드에 넣었습니다 · ⌘V로 붙여넣으세요 (자동 붙여넣기는 손쉬운 사용 권한에서 voin을 켜면 됩니다)")
+            return (false, L("클립보드에 넣었습니다 · ⌘V로 붙여넣으세요 (자동 붙여넣기는 손쉬운 사용 권한에서 voin을 켜면 됩니다)"))
         }
         let saved = Self.snapshot(board)
         board.clearContents()
@@ -753,7 +876,7 @@ final class MacPaster: TextPaster {
             board.clearContents()
             if !saved.isEmpty { board.writeObjects(saved) }
         }
-        return (true, "붙여넣었습니다")
+        return (true, L("붙여넣었습니다"))
     }
 
     // 클립보드 항목을 형식별로 복사해 둔다 (NSPasteboardItem은 클립보드가 바뀌면 못 쓰게 되므로 새로 만든다)
