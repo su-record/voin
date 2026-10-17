@@ -423,14 +423,15 @@ const agent = createAgent({
     if (message.type === "agent-delta") agentAnswer += message.text;
     if (message.type === "agent-done") {
       job = null;
-      speak(message.error ? t("작업이 실패했어요.") : spokenAnswer(agentAnswer || message.text));
+      const mode = loadSettings().agentSpeak;
+      speak(message.error ? t("작업이 실패했어요.") : spokenAnswer(agentAnswer || message.text, mode === "full"));
     }
     broadcast(message);
   },
 });
 
-// 소리로 읽을 답: 코드·표·기호를 빼고 앞의 3문장(최대 300자)까지. 긴 내용은 화면에서 본다
-function spokenAnswer(text) {
+// 소리로 읽을 답: 코드·표·기호를 뺀다. full이 아니면 앞의 3문장(최대 300자)까지. 답 전체는 늘 화면에도 나온다
+function spokenAnswer(text, full = false) {
   const plain = text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/^\s*\|.*$/gm, " ")
@@ -438,6 +439,7 @@ function spokenAnswer(text) {
     .replace(/[*_`#>\[\]()|]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  if (full) return plain;
   const sentences = plain.match(/.+?(?:[.!?。](?=\s|$)|$)/g) ?? []; // report.md 같은 점은 끊지 않는다
   let out = "";
   for (const s of sentences.slice(0, 3)) {
@@ -457,7 +459,7 @@ const yourTurn = () => {
   for (const d of dictations) d.send({ type: "dictate-ready" });
 };
 function speak(text) {
-  if (!text || !loadSettings().agentSpeak) return yourTurn();
+  if (!text || loadSettings().agentSpeak === "off") return yourTurn();
   speaking?.kill();
   // 화면 언어에 맞는 맥 기본 목소리 (파일 저장이 아니라 바로 읽어서 어느 목소리든 된다)
   const voice = { ko: "Yuna", ja: "Kyoko", en: "Samantha" }[getLang()];
@@ -974,7 +976,12 @@ async function handleApi(req, res, url) {
   if (route === "GET /api/agent/folders" || route === "POST /api/agent/folders") {
     let s = loadSettings();
     if (req.method === "POST") {
-      const { add, remove, select } = await readJson(req);
+      const { add, remove, select, alias } = await readJson(req);
+      // 별칭 바꾸기: { alias: { path, name } }, 빈 이름이면 별칭을 지운다
+      if (alias?.path) {
+        // 설정의 객체 값은 합쳐 저장되므로, 지울 때는 빈 값으로 덮는다
+        s = saveSettings({ agentFolderAliases: { [alias.path]: String(alias.name ?? "").trim().slice(0, 40) } });
+      }
       const target = add ?? select;
       if (target !== undefined) {
         if (agent.busy && target !== s.agentFolder) return json(409, { error: t("작업이 끝난 뒤 폴더를 바꿀 수 있습니다.") });
@@ -983,11 +990,12 @@ async function handleApi(req, res, url) {
       }
       if (remove !== undefined) {
         const rest = s.agentFolders.filter((f) => f !== remove);
-        s = saveSettings({ agentFolders: rest, agentFolder: s.agentFolder === remove ? (rest[0] ?? "") : s.agentFolder });
+        // 별칭도 지운다 (객체 값은 합쳐 저장되어 빈 값으로 덮는다)
+        s = saveSettings({ agentFolders: rest, agentFolder: s.agentFolder === remove ? (rest[0] ?? "") : s.agentFolder, agentFolderAliases: { [remove]: "" } });
       }
     }
     const last = agentLastActivity();
-    const folders = s.agentFolders.map((f) => ({ path: f, name: path.basename(f) || f, exists: fs.existsSync(f), lastAt: last[f] ?? null }));
+    const folders = s.agentFolders.map((f) => ({ path: f, name: path.basename(f) || f, alias: s.agentFolderAliases[f] || "", exists: fs.existsSync(f), lastAt: last[f] ?? null }));
     return json(200, { folders, current: s.agentFolder, busy: Boolean(agent.busy), home: os.homedir() });
   }
   if (route === "POST /api/agent/send") {
@@ -1175,7 +1183,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   // 화면과 서버가 같이 쓰는 모듈 (사전 글상자 파싱, 화면 언어): 이 파일들만 내준다
-  const shared = { "/shared/text-cleanup.mjs": "./lib/text-cleanup.mjs", "/shared/i18n.mjs": "./lib/i18n.mjs", "/shared/locales/en.mjs": "./lib/locales/en.mjs", "/shared/locales/ja.mjs": "./lib/locales/ja.mjs" };
+  const shared = { "/shared/text-cleanup.mjs": "./lib/text-cleanup.mjs", "/shared/i18n.mjs": "./lib/i18n.mjs", "/shared/folder-voice.mjs": "./lib/folder-voice.mjs", "/shared/locales/en.mjs": "./lib/locales/en.mjs", "/shared/locales/ja.mjs": "./lib/locales/ja.mjs" };
   if (url.pathname in shared) {
     res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
     fs.createReadStream(new URL(shared[url.pathname], import.meta.url)).pipe(res);
