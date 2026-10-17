@@ -38,6 +38,7 @@ let L10N: [String: [String: String]] = [
         "내려받기 취소": "Cancel download",
         "받아쓰기 모델 내려받기 멈춤": "Transcription model download paused",
         "받아쓰기 모델 없음": "No transcription model",
+        "받아쓰기 모델 고르기…": "Choose a transcription model…",
         "받아쓰기 모델 이어 받기": "Resume transcription model download",
         "받아쓰기 모델 내려받기 ({size}MB)": "Download transcription model ({size}MB)",
         "받아쓰기 모델 문제 있음": "Transcription model problem",
@@ -93,6 +94,7 @@ let L10N: [String: [String: String]] = [
         "내려받기 취소": "ダウンロードをキャンセル",
         "받아쓰기 모델 내려받기 멈춤": "文字起こしモデルのダウンロード一時停止",
         "받아쓰기 모델 없음": "文字起こしモデルなし",
+        "받아쓰기 모델 고르기…": "文字起こしモデルを選ぶ…",
         "받아쓰기 모델 이어 받기": "文字起こしモデルのダウンロードを再開",
         "받아쓰기 모델 내려받기 ({size}MB)": "文字起こしモデルをダウンロード（{size}MB）",
         "받아쓰기 모델 문제 있음": "文字起こしモデルに問題があります",
@@ -142,6 +144,7 @@ struct WebState: Decodable {
         var verifying: Bool?
         var sizeMB: Int?
         var canDownload: Bool?
+        var id: String?
     }
     var recording = false
     var startedAt: Double?
@@ -618,6 +621,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             let percent = Int((model.received ?? 0) / max(model.total ?? 1, 1) * 100)
             return (L("받아쓰기 모델 내려받는 중 {percent}%", ["percent": "\(percent)"]), L("내려받기 취소"))
         case "missing":
+            // 고른 모델이 없으면 내려받을 모델을 정하지 않고 설정의 목록을 연다 (기본 모델 없음)
+            if model.id == nil { return (L("받아쓰기 모델 없음"), L("받아쓰기 모델 고르기…")) }
             return (model.paused == true ? L("받아쓰기 모델 내려받기 멈춤") : L("받아쓰기 모델 없음"),
                 model.paused == true ? L("받아쓰기 모델 이어 받기") : L("받아쓰기 모델 내려받기 ({size}MB)", ["size": "\(model.sizeMB ?? 751)"]))
         default: return (L("받아쓰기 모델 문제 있음"), model.canDownload == true ? L("받아쓰기 모델 다시 받기") : nil)

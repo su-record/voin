@@ -327,6 +327,7 @@ function renderModelBar() {
 }
 
 async function modelAction() {
+  if (!model.id) return openSettings("set-models"); // 고른 모델이 없으면 목록에서 고르게
   const path = model.state === "downloading" ? "/api/model/cancel" : "/api/model/download";
   try {
     await api(path, { method: "POST" });
