@@ -283,6 +283,7 @@ kbd { font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid var(--li
 @media (prefers-color-scheme: dark) { .speaker { color: hsl(var(--h) 60% 72%); } }
 .turn-head time { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .turn p { margin: 0 0 4px; word-break: keep-all; overflow-wrap: anywhere; }
+.turn p.translation { color: var(--muted); }
 .live { padding: 0 28px 14px; }
 .partial { margin: 4px 0; color: var(--muted); font-size: 14px; }
 .partial:empty { display: none; }
