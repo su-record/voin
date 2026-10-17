@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { recommendedSummaryModel, SUMMARY_CATALOG } from "../lib/summary-catalog.mjs";
 
 test("맥 메모리별 추천", () => {
-  assert.equal(recommendedSummaryModel(8).id, "midm-2.0-mini");
+  assert.equal(recommendedSummaryModel(8).id, "qwen3.5-4b");
   assert.equal(recommendedSummaryModel(16).id, "gemma-4-e4b");
   assert.equal(recommendedSummaryModel(24).id, "gemma-4-12b");
   assert.equal(recommendedSummaryModel(64).id, "gemma-4-12b");
-  assert.equal(recommendedSummaryModel(4).id, "midm-2.0-mini"); // 맞는 게 없어도 가장 작은 것
+  assert.equal(recommendedSummaryModel(4).id, "qwen3.5-4b"); // 맞는 게 없어도 목록 첫 번째
 });
 
 test("목록: 모델마다 고정 커밋·체크섬과 장단점이 있다", () => {

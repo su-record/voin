@@ -369,7 +369,14 @@ function asrModelCard(m) {
   if (m.installed) tags.push(["", SOURCE_TEXT[m.source]?.() ?? t("설치됨")]);
   if (m.size > 1.2e9) tags.push(["warn", t("메모리 16GB 이상 권장")]);
   return modelCard(m, {
-    sub: `${m.family} · ${fmtSize(m.size)} · ${m.languages} · ${t("1시간 녹음 처리 {time}", { time: fmtHourTime(m.rtf) })}`,
+    // 글자 정확도는 정답 대본이 있는 합성 회의 기준 (실제 목소리와 다를 수 있어 모델끼리 비교용)
+    sub: [
+      m.family,
+      fmtSize(m.size),
+      m.languages,
+      ...(m.accuracy ? [t("글자 정확도 {n}% (합성 음성)", { n: m.accuracy })] : []),
+      t("1시간 녹음 처리 {time}", { time: fmtHourTime(m.rtf) }),
+    ].join(" · "),
     tags,
     post: (action) => api(`/api/models/${m.id}/${action}`, { method: "POST" }),
     reload: loadModelList,
@@ -398,7 +405,14 @@ function summaryModelCard(m, memoryGB) {
   if (m.recommended) tags.unshift(["good", t("이 맥({gb}GB)에 추천", { gb: memoryGB })]);
   if (!m.fits) tags.push(["warn", t("메모리 {gb}GB 이상 필요", { gb: m.minMemoryGB })]);
   return modelCard(m, {
-    sub: `${m.family} · ${fmtSize(m.size)} · ${t("무료 · 기록이 이 맥 밖으로 나가지 않음")}`,
+    // 측정치: 정답이 있는 합성 회의(6분 40초)에서 결정·할 일·남은 질문 14개 중 맞힌 비율, 요약 시간, 요약 중 메모리
+    sub: [
+      m.family,
+      fmtSize(m.size),
+      t("정확도 {n}%", { n: m.accuracy }),
+      t("6분 회의 요약 {n}초", { n: m.seconds }),
+      t("메모리 약 {n}GB", { n: m.peakMemoryGB }),
+    ].join(" · "),
     tags,
     post: (action) => api(`/api/summary/local-models/${m.id}/${action}`, { method: "POST" }),
     reload: loadSummaryModelList,
