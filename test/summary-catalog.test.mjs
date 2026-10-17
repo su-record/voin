@@ -4,7 +4,7 @@ import { recommendedSummaryModel, SUMMARY_CATALOG } from "../lib/summary-catalog
 
 test("맥 메모리별 추천", () => {
   assert.equal(recommendedSummaryModel(8).id, "midm-2.0-mini");
-  assert.equal(recommendedSummaryModel(16).id, "qwen3.5-9b");
+  assert.equal(recommendedSummaryModel(16).id, "gemma-4-e4b");
   assert.equal(recommendedSummaryModel(24).id, "gemma-4-12b");
   assert.equal(recommendedSummaryModel(64).id, "gemma-4-12b");
   assert.equal(recommendedSummaryModel(4).id, "midm-2.0-mini"); // 맞는 게 없어도 가장 작은 것

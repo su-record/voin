@@ -4,3 +4,4 @@ models/
 native/syscap
 native/app/build/
 dist/
+summary-compare/

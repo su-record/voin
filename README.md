@@ -52,6 +52,7 @@ Apple 개발자 서명이 없는 앱이라 처음 열 때 macOS가 막습니다.
 - `samples/`에 테스트용 음성이 있습니다. ⌘O로 불러오면 받아쓰기와 화자 분리 결과를 볼 수 있습니다.
   - `4명-테스트.wav`: 같은 음성(Yuna)의 높낮이를 바꿔 만든 4명 대화. 받아쓰기 확인용입니다.
   - `12명-합성음성-테스트.wav`: 맥의 합성 음성 12개. 화자 분리 시험용입니다. 기계음이 섞여 있어 받아쓰기 품질은 낮습니다.
+  - `5명-합성회의-정답포함.wav`: 결정·할 일·남은 질문을 심어 둔 6분 40초 회의. 요약 모델 비교용이며 정답과 대본은 `5명-합성회의-정답.md`에 있습니다.
 - 정확도는 **실제 회의 녹음**(아이폰 음성 메모의 m4a 등)으로 확인하세요. 합성 음성은 실제 사람 목소리와 특성이 달라 판단 근거가 되지 않습니다.
 
 ## 설정 항목
@@ -87,9 +88,12 @@ Apple 개발자 서명이 없는 앱이라 처음 열 때 macOS가 막습니다.
 | ChatGPT 로그인 / Grok 로그인 | 설정에서 **로그인** → 브라우저에서 기기 코드 승인. hermes-agent(0.19.0 `hermes_cli/auth.py`)와 같은 방식으로 Codex CLI·Grok CLI의 로그인(클라이언트 ID)을 빌려 씀 (`lib/oauth-login.mjs`). 토큰은 키체인, 만료 전 자동 갱신 | OpenAI / xAI |
 | API 키 (Anthropic, OpenAI, xAI Grok, Google Gemini, OpenRouter) | 설정에 키 등록. 키는 맥 키체인에 저장 | 해당 회사 |
 | OpenAI 호환 주소 | 서버 주소(LM Studio·사내 게이트웨이 등), 키는 필요할 때만 | 그 서버 |
+| **voin 내장 모델** (무료) | 설정 → 요약의 목록에서 모델 내려받기 (이 맥 메모리에 맞는 모델에 "추천" 표시) | 이 맥 안 |
 | Ollama | Ollama 설치·실행, 모델 하나 이상 받기 | 이 맥 안 |
 
-자동은 위 목록 순서대로 쓸 수 있는 첫 번째를 씁니다. ChatGPT·Grok 로그인은 공식으로 다른 앱에 열린 방식이 아니라(사용자 결정으로 hermes-agent 방식을 차용), OpenAI·xAI가 막으면 예고 없이 안 될 수 있습니다. ChatGPT 쪽 요청은 Codex CLI처럼 보이는 머리글(`originator: codex_cli_rs`)을 붙여야 Cloudflare에서 막히지 않습니다.
+자동은 위 목록 순서대로 쓸 수 있는 첫 번째를 씁니다. API 키·구독 로그인의 모델은 앱을 켤 때와 하루에 한 번 회사의 모델 목록을 받아, 자동이면 가장 새 세대의 주력 모델을 고릅니다(`lib/model-ranking.mjs`). 직접 고른 모델은 바꾸지 않고 새 모델이 나오면 알리며, 고른 모델이 없어지면 자동 선택으로 대신 씁니다.
+
+voin 내장 모델(`lib/summary-catalog.mjs`, `lib/local-llm.mjs`)은 Mi:dm 2.0 Mini(8GB 맥)·Gemma 4 E4B(16GB)·Qwen3.5 9B·Gemma 4 12B(24GB 이상) 중에서 고릅니다. 정답이 있는 합성 회의(`samples/5명-합성회의-정답.md`)로 후보 10개를 비교해 골랐고, 장단점은 그 결과입니다. 다시 비교하려면 `scripts/compare-summary-models.mjs`를 씁니다. ChatGPT·Grok 로그인은 공식으로 다른 앱에 열린 방식이 아니라(사용자 결정으로 hermes-agent 방식을 차용), OpenAI·xAI가 막으면 예고 없이 안 될 수 있습니다. ChatGPT 쪽 요청은 Codex CLI처럼 보이는 머리글(`originator: codex_cli_rs`)을 붙여야 Cloudflare에서 막히지 않습니다.
 
 ## 동작 방식
 
