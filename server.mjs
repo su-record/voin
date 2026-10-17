@@ -18,7 +18,19 @@ import { applyDictionary, dictionaryTerms, removeFillers } from "./lib/text-clea
 import { agentHistory, agentLastActivity, createAgent, tagOldHistory } from "./lib/agent.mjs";
 import { cancelLogin, logout, startLogin } from "./lib/oauth-login.mjs";
 import { nameSuggestions, renameVoices, saveNameSuggestions, voicePath, voiceUrls } from "./lib/voice-samples.mjs";
-import { detectProviders, listModels as listSummaryModels, modelChoice, pickProvider, refreshModelLists, saveApiKey, suggestSpeakerNames, summarize } from "./lib/summarizer.mjs";
+import { findSummaryModel } from "./lib/summary-catalog.mjs";
+import {
+  detectProviders,
+  listModels as listSummaryModels,
+  localSummaryModels,
+  memoryGB,
+  modelChoice,
+  pickProvider,
+  refreshModelLists,
+  saveApiKey,
+  suggestSpeakerNames,
+  summarize,
+} from "./lib/summarizer.mjs";
 import { findCatalogModel } from "./lib/model-catalog.mjs";
 import {
   activeModelEntry,
@@ -646,6 +658,38 @@ async function startDownload(entry) {
   }
 }
 
+// voin 내장 요약 모델 내려받기 (받아쓰기 모델과 따로, 한 번에 하나)
+let llmDownload = null; // { id, abort, progress }
+async function startLlmDownload(entry) {
+  if (llmDownload) return;
+  llmDownload = { id: entry.id, abort: new AbortController(), progress: { received: partialBytes(entry), total: entry.size } };
+  const report = () => broadcast({ type: "summary-models-changed" });
+  report();
+  try {
+    await downloadModel(entry, {
+      signal: llmDownload.abort.signal,
+      onProgress: (p) => {
+        llmDownload.progress = p;
+        report();
+      },
+    });
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      console.error("요약 모델 내려받기 실패:", error);
+      broadcast({ type: "summary-models-error", id: entry.id, message: describeDownloadError(error) });
+    }
+  } finally {
+    llmDownload = null;
+    await detectProviders({ refresh: true });
+    report();
+  }
+}
+
+function summaryModelsPayload() {
+  const models = localSummaryModels(loadSettings().summaryModels.voin);
+  return { memoryGB: memoryGB(), models: models.map((m) => ({ ...m, downloading: llmDownload?.id === m.id ? llmDownload.progress : null })) };
+}
+
 function modelsPayload() {
   const activeId = activeModelEntry(loadSettings()).id;
   return {
@@ -968,6 +1012,29 @@ async function handleApi(req, res, url) {
     } catch (error) {
       return json(400, { error: error.message });
     }
+  }
+  if (route === "GET /api/summary/local-models") return json(200, summaryModelsPayload());
+  const llmRoute = url.pathname.match(/^\/api\/summary\/local-models\/([\w.-]+)\/(download|cancel|delete|use)$/);
+  if (llmRoute && req.method === "POST") {
+    const entry = findSummaryModel(llmRoute[1]);
+    if (!entry) return json(404, { error: "없는 모델입니다." });
+    const action = llmRoute[2];
+    if (action === "download") {
+      if (llmDownload && llmDownload.id !== entry.id) return json(409, { error: "다른 요약 모델을 내려받는 중입니다. 끝난 뒤 다시 시도하세요." });
+      startLlmDownload(entry);
+      return json(202, {});
+    }
+    if (action === "cancel") {
+      if (llmDownload?.id === entry.id) llmDownload.abort.abort();
+      return json(200, {});
+    }
+    if (action === "delete") {
+      if (llmDownload?.id === entry.id) return json(409, { error: "내려받는 중입니다. 먼저 취소하세요." });
+      deleteModel(entry);
+    } else saveSettings({ summaryModels: { voin: entry.id } });
+    await detectProviders({ refresh: true });
+    broadcast({ type: "summary-models-changed" });
+    return json(200, summaryModelsPayload());
   }
   if (route === "GET /api/summary/models") {
     const settings = loadSettings();

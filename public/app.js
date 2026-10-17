@@ -211,6 +211,15 @@ function handleMessage(m) {
       modelErrors[m.id] = m.message;
       if (!$("settingsView").hidden) loadModelList();
       break;
+    case "summary-models-error":
+      modelErrors[m.id] = m.message;
+    // falls through
+    case "summary-models-changed":
+      if (!$("settingsView").hidden) {
+        loadSummaryModelList();
+        loadProviders();
+      }
+      break;
     case "recovery-done":
     case "recovery-error":
       setProcessing(null);
@@ -322,7 +331,45 @@ async function loadModelList() {
     $("modelList").textContent = error.message;
     return;
   }
-  $("modelList").replaceChildren(...data.models.map(modelCard));
+  $("modelList").replaceChildren(...data.models.map(asrModelCard));
+}
+
+function asrModelCard(m) {
+  const tags = [m.streaming ? ["blue", "실시간 스트리밍 지원"] : ["", "스트리밍 미지원 (문장 단위)"]];
+  if (m.installed) tags.push(["", SOURCE_TEXT[m.source] ?? "설치됨"]);
+  if (m.size > 1.2e9) tags.push(["warn", "메모리 16GB 이상 권장"]);
+  return modelCard(m, {
+    sub: `${m.family} · ${fmtSize(m.size)} · ${m.languages} · 1시간 녹음 처리 ${fmtHourTime(m.rtf)}`,
+    tags,
+    post: (action) => api(`/api/models/${m.id}/${action}`, { method: "POST" }),
+    reload: loadModelList,
+    canDelete: m.source === "downloaded",
+  });
+}
+
+// voin 내장 요약 모델 목록: 받아쓰기 모델과 같은 카드, 이 맥 메모리에 맞는 모델에 "추천"
+async function loadSummaryModelList() {
+  let data;
+  try {
+    data = await api("/api/summary/local-models");
+  } catch (error) {
+    $("summaryModelList").textContent = error.message;
+    return;
+  }
+  $("summaryModelList").replaceChildren(...data.models.map((m) => summaryModelCard(m, data.memoryGB)));
+}
+
+function summaryModelCard(m, memoryGB) {
+  const tags = [["", m.license]];
+  if (m.recommended) tags.unshift(["good", `이 맥(${memoryGB}GB)에 추천`]);
+  if (!m.fits) tags.push(["warn", `메모리 ${m.minMemoryGB}GB 이상 필요`]);
+  return modelCard(m, {
+    sub: `${m.family} · ${fmtSize(m.size)} · 무료 · 기록이 이 맥 밖으로 나가지 않음`,
+    tags,
+    post: (action) => api(`/api/summary/local-models/${m.id}/${action}`, { method: "POST" }),
+    reload: loadSummaryModelList,
+    canDelete: true,
+  });
 }
 
 function el(tag, className, text) {
@@ -332,17 +379,16 @@ function el(tag, className, text) {
   return node;
 }
 
-function modelCard(m) {
+// 모델 카드 (받아쓰기·요약 공통). tags: [[색 클래스, 글], …]
+function modelCard(m, { sub, tags, post, reload, canDelete }) {
   const card = el("article", `model-card${m.active ? " active" : ""}`);
   const top = el("div", "model-top");
   const info = el("div");
-  info.append(el("div", "model-name", m.name), el("div", "model-sub", `${m.family} · ${fmtSize(m.size)} · ${m.languages} · 1시간 녹음 처리 ${fmtHourTime(m.rtf)}`));
+  info.append(el("div", "model-name", m.name), el("div", "model-sub", sub));
   const badges = el("div", "model-badges");
   if (m.active) badges.append(el("span", "tag blue", "사용 중"));
   if (m.badge) badges.append(el("span", "tag good", m.badge));
-  badges.append(el("span", `tag${m.streaming ? " blue" : ""}`, m.streaming ? "실시간 스트리밍 지원" : "스트리밍 미지원 (문장 단위)"));
-  if (m.installed) badges.append(el("span", "tag", SOURCE_TEXT[m.source] ?? "설치됨"));
-  if (m.size > 1.2e9) badges.append(el("span", "tag warn", "메모리 16GB 이상 권장"));
+  for (const [cls, text] of tags) badges.append(el("span", `tag${cls ? ` ${cls}` : ""}`, text));
   info.append(badges);
 
   const actions = el("div", "model-actions");
@@ -357,16 +403,15 @@ function modelCard(m) {
       } catch (error) {
         modelErrors[m.id] = error.message;
       }
-      loadModelList();
+      reload();
     };
     return b;
   };
-  const post = (action) => api(`/api/models/${m.id}/${action}`, { method: "POST" });
   if (m.downloading) actions.append(button("취소", () => post("cancel")));
   else if (!m.installed) actions.append(button(m.partial ? "이어 받기" : "내려받기", () => post("download"), "primary"));
   else if (!m.active) {
     actions.append(button("사용하기", () => post("use"), "primary"));
-    if (m.source === "downloaded") actions.append(button("삭제", () => post("delete")));
+    if (canDelete) actions.append(button("삭제", () => post("delete")));
   }
   top.append(info, actions);
   card.append(top);
@@ -1123,7 +1168,8 @@ async function loadProviders(refresh = false) {
   );
   select.value = settings.summaryProvider;
   Object.values(groups).forEach((g) => g.replaceChildren());
-  for (const p of providers) groups[p.kind].append(providerRow(p));
+  for (const p of providers) groups[p.kind === "builtin" ? "local" : p.kind].append(providerRow(p));
+  loadSummaryModelList();
   renderAgentToolHint(providers);
 }
 
